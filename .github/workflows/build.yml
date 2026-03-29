@@ -53,6 +53,20 @@ jobs:
           import re
           with open('ovr_decoded/AndroidManifest.xml', 'r') as f:
               content = f.read()
+
+      - name: Change package name
+        run: |
+          python3 << 'PYEOF'
+          with open('ovr_decoded/AndroidManifest.xml', 'r') as f:
+              content = f.read()
+          content = content.replace(
+              'com.oculus.ovrmonitormetricsservice',
+              'com.yeepsmod.ovroverlay'
+          )
+          with open('ovr_decoded/AndroidManifest.xml', 'w') as f:
+              f.write(content)
+          print("Package name changed!")
+          PYEOF
           
           new_activity = '''
               <activity
