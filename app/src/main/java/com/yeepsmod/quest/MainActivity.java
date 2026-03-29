@@ -42,8 +42,11 @@ public class MainActivity extends Activity {
         menu.setBackgroundColor(BG_COLOR);
         menu.setPadding(30, 30, 30, 30);
 
-        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(900, FrameLayout.LayoutParams.WRAP_CONTENT);
-        menuParams.gravity = Gravity.CENTER;
+        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(600, FrameLayout.LayoutParams.WRAP_CONTENT);
+        menuParams.gravity = Gravity.TOP | Gravity.START;
+        menuParams.topMargin = 20;
+        menuParams.leftMargin = 20;
+
         root.addView(menu, menuParams);
 
         // Header row
@@ -135,6 +138,8 @@ public class MainActivity extends Activity {
         menu.addView(divider2, div2Params);
 
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT, 500);
+
                 LinearLayout.LayoutParams.MATCH_PARENT, 700);
         menu.addView(scrollView, scrollParams);
 
