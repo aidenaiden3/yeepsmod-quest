@@ -1,16 +1,24 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk 33
+    namespace 'com.yeepsmod.quest'
+    defaultConfig {
+        applicationId "com.yeepsmod.quest"
+        minSdk 26
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
     }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.0'
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
     }
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
+dependencies {
+    implementation 'com.oculus.sdk:vrapi-android:1.0.4'
 }
