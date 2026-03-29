@@ -40,8 +40,9 @@ public class OverlayService extends Service {
 
     private void createOverlay() {
         // Root container
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.TRANSPARENT);
+        FrameLayout.LayoutParams yParams = new FrameLayout.LayoutParams(120, 120);
+        yParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        yParams.topMargin = 20;
 
         // Y Button
         Button yBtn = new Button(this);
@@ -136,7 +137,7 @@ public class OverlayService extends Service {
         });
 
         // Window params
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
