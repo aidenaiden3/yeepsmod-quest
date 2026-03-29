@@ -1,34 +1,49 @@
 package com.yeepsmod.quest;
 
 import android.app.Activity;
-import android.graphics.Color;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.widget.LinearLayout;
-import android.widget.TextView;
+import android.provider.Settings;
+import android.widget.Toast;
 
 public class MainActivity extends Activity {
+
+    private static final int OVERLAY_PERMISSION_REQ = 1234;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(intent, OVERLAY_PERMISSION_REQ);
+            } else {
+                startOverlay();
+            }
+        } else {
+            startOverlay();
+        }
+    }
 
-        LinearLayout layout = new LinearLayout(this);
-        layout.setBackgroundColor(Color.parseColor("#141A24"));
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 40, 40, 40);
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == OVERLAY_PERMISSION_REQ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (Settings.canDrawOverlays(this)) {
+                    startOverlay();
+                } else {
+                    Toast.makeText(this, "Overlay permission required!", Toast.LENGTH_LONG).show();
+                }
+            }
+        }
+    }
 
-        TextView text = new TextView(this);
-        text.setText("YeepsMod VR");
-        text.setTextColor(Color.parseColor("#2EC08B"));
-        text.setTextSize(24);
-        layout.addView(text);
-
-        TextView text2 = new TextView(this);
-        text2.setText("Loading...");
-        text2.setTextColor(Color.WHITE);
-        text2.setTextSize(16);
-        layout.addView(text2);
-
-        setContentView(layout);
+    private void startOverlay() {
+        Intent intent = new Intent(this, OverlayService.class);
+        startService(intent);
+        finish();
     }
 }
