@@ -1,18 +1,16 @@
-apply plugin: 'com.android.application'
-
-android {
-    compileSdk 33
-    namespace 'com.yeepsmod.quest'
-    defaultConfig {
-        applicationId "com.yeepsmod.quest"
-        minSdk 21
-        targetSdk 32
-        versionCode 1
-        versionName "1.0"
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
     }
 }
