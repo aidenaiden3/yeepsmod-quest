@@ -32,11 +32,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Full screen black background
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        // Main menu card - centered
         LinearLayout menu = new LinearLayout(this);
         menu.setOrientation(LinearLayout.VERTICAL);
         menu.setBackgroundColor(BG_COLOR);
@@ -46,10 +44,8 @@ public class MainActivity extends Activity {
         menuParams.gravity = Gravity.TOP | Gravity.START;
         menuParams.topMargin = 20;
         menuParams.leftMargin = 20;
-
         root.addView(menu, menuParams);
 
-        // Header row
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -73,14 +69,12 @@ public class MainActivity extends Activity {
 
         menu.addView(headerRow);
 
-        // Divider
         View divider = new View(this);
         divider.setBackgroundColor(Color.parseColor("#1A2030"));
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2);
         divParams.setMargins(0, 15, 0, 15);
         menu.addView(divider, divParams);
 
-        // Tab bar
         LinearLayout tabBar = new LinearLayout(this);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setBackgroundColor(Color.parseColor("#0D1219"));
@@ -89,7 +83,6 @@ public class MainActivity extends Activity {
         tabContents = new LinearLayout[tabNames.length];
         Button[] tabBtns = new Button[tabNames.length];
 
-        // Content scroll
         ScrollView scrollView = new ScrollView(this);
         LinearLayout contentArea = new LinearLayout(this);
         contentArea.setOrientation(LinearLayout.VERTICAL);
@@ -140,9 +133,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 500);
         menu.addView(scrollView, scrollParams);
 
-                LinearLayout.LayoutParams.MATCH_PARENT, 700);
-        menu.addView(scrollView, scrollParams);
-
         setContentView(root);
     }
 
@@ -162,7 +152,6 @@ public class MainActivity extends Activity {
         });
         container.addView(refreshBtn);
 
-        // Placeholder player rows
         String[] fakePlayers = {"🥽 Player1 • Actor #1", "🥽 Player2 • Actor #2", "📱 MobileUser • Actor #3"};
         for (String player : fakePlayers) {
             LinearLayout row = new LinearLayout(this);
@@ -298,9 +287,7 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, 90, 1);
             cp.setMargins(4, 4, 4, 4);
             cb.setLayoutParams(cp);
-            cb.setOnClickListener(v -> {
-                Toast.makeText(this, "Color set to: " + cn, Toast.LENGTH_SHORT).show();
-            });
+            cb.setOnClickListener(v -> Toast.makeText(this, "Color set to: " + cn, Toast.LENGTH_SHORT).show());
             if (i < 5) row1.addView(cb);
             else row2.addView(cb);
         }
@@ -315,9 +302,7 @@ public class MainActivity extends Activity {
         container.addView(div2, dp2);
 
         Button emptyBtn = makeButton("👻  Become Empty Yeep", RED_COLOR, Color.WHITE);
-        emptyBtn.setOnClickListener(v -> {
-            Toast.makeText(this, "Empty Yeep applied!", Toast.LENGTH_SHORT).show();
-        });
+        emptyBtn.setOnClickListener(v -> Toast.makeText(this, "Empty Yeep applied!", Toast.LENGTH_SHORT).show());
         container.addView(emptyBtn);
     }
 
@@ -336,9 +321,7 @@ public class MainActivity extends Activity {
         btn.setTextColor(textColor);
         btn.setBackgroundColor(bgColor);
         btn.setTextSize(13);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, 6, 0, 6);
         btn.setLayoutParams(params);
         return btn;
