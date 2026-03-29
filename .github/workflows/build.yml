@@ -28,11 +28,30 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Generate keystore
+        run: |
+          keytool -genkey -v -keystore keystore.jks \
+            -alias yeepsmod -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -storepass yeepsmod123 \
+            -keypass yeepsmod123 \
+            -dname "CN=YeepsMod, OU=Dev, O=YeepsMod, L=US, S=US, C=US"
+
       - name: Build APK
         run: ./gradlew assembleRelease
+
+      - name: Sign APK
+        run: |
+          $ANDROID_HOME/build-tools/33.0.0/apksigner sign \
+            --ks keystore.jks \
+            --ks-pass pass:yeepsmod123 \
+            --key-pass pass:yeepsmod123 \
+            --ks-key-alias yeepsmod \
+            --out app/build/outputs/apk/release/YeepsMod-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: YeepsMod-Quest
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/YeepsMod-signed.apk
