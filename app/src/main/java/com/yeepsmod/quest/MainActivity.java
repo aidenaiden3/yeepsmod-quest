@@ -140,7 +140,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 500);
         menu.addView(scrollView, scrollParams);
 
-
                 LinearLayout.LayoutParams.MATCH_PARENT, 700);
         menu.addView(scrollView, scrollParams);
 
