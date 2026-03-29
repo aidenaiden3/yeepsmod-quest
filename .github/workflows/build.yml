@@ -42,7 +42,9 @@ jobs:
 
       - name: Sign APK
         run: |
-          $ANDROID_HOME/build-tools/33.0.0/apksigner sign \
+          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
+          echo "Using build tools: $BUILD_TOOLS"
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
             --ks keystore.jks \
             --ks-pass pass:yeepsmod123 \
             --key-pass pass:yeepsmod123 \
