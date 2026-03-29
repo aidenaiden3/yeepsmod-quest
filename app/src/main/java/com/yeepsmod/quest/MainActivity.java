@@ -137,8 +137,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams div2Params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2);
         menu.addView(divider2, div2Params);
 
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, 500);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 500);
+        menu.addView(scrollView, scrollParams);
+
 
                 LinearLayout.LayoutParams.MATCH_PARENT, 700);
         menu.addView(scrollView, scrollParams);
