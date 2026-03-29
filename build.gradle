@@ -1,16 +1,18 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.0'
-    }
-}
+apply plugin: 'com.android.application'
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
+android {
+    compileSdk 33
+    namespace 'com.yeepsmod.quest'
+    defaultConfig {
+        applicationId "com.yeepsmod.quest"
+        minSdk 21
+        targetSdk 32
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
     }
 }
