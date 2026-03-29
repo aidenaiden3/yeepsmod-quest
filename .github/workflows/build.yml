@@ -60,8 +60,7 @@ jobs:
 
       - name: Fix smali references
         run: |
-          find ovr_decoded/smali -name "*.smali" -exec sed -i 's/com\/oculus\/ovrmonitormetricsservice/com\/yeepsmod\/overlay/g' {} \;
-          find ovr_decoded/smali -name "*.smali" -exec sed -i 's/com.oculus.ovrmonitormetricsservice/com.yeepsmod.overlay/g' {} \;
+          find ovr_decoded/smali -name "*.smali" -exec sed -i 's|Lcom/oculus/ovrmonitormetricsservice/|Lcom/yeepsmod/overlay/|g' {} \;
 
       - name: Recompile OVR APK
         run: |
