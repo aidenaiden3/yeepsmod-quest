@@ -1,7 +1,9 @@
 package com.yeepsmod.quest;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -14,6 +16,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.File;
 
 public class MainActivity extends Activity {
 
@@ -21,7 +24,6 @@ public class MainActivity extends Activity {
     private int ACCENT = Color.parseColor("#2EC08B");
     private int BTN = Color.parseColor("#1A1A1A");
     private int RED = Color.parseColor("#CC2424");
-    private int BORDER = Color.parseColor("#333333");
 
     private LinearLayout[] tabContents;
     private Button[] tabBtns;
@@ -38,10 +40,9 @@ public class MainActivity extends Activity {
         main.setOrientation(LinearLayout.VERTICAL);
         main.setBackgroundColor(BG);
 
-        FrameLayout.LayoutParams mainParams = new FrameLayout.LayoutParams(
+        root.addView(main, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT);
-        root.addView(main, mainParams);
+            FrameLayout.LayoutParams.MATCH_PARENT));
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -51,16 +52,16 @@ public class MainActivity extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = new TextView(this);
-        title.setText("YeepsMod");
+        title.setText("emder.lol");
         title.setTextColor(ACCENT);
-        title.setTextSize(20);
+        title.setTextSize(22);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
         title.setLayoutParams(tlp);
         header.addView(title);
 
         TextView ver = new TextView(this);
-        ver.setText("V2");
+        ver.setText("V1");
         ver.setTextColor(Color.GRAY);
         ver.setTextSize(11);
         ver.setBackgroundColor(BTN);
@@ -69,7 +70,12 @@ public class MainActivity extends Activity {
 
         main.addView(header);
 
-        // Tab bar
+        // Divider
+        View div = new View(this);
+        div.setBackgroundColor(Color.parseColor("#222222"));
+        main.addView(div, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+
+        // Tabs
         String[] tabNames = {"Players", "Mods", "System", "Patcher", "ADB", "Settings"};
         tabContents = new LinearLayout[tabNames.length];
         tabBtns = new Button[tabNames.length];
@@ -81,7 +87,7 @@ public class MainActivity extends Activity {
         ScrollView scrollView = new ScrollView(this);
         LinearLayout contentArea = new LinearLayout(this);
         contentArea.setOrientation(LinearLayout.VERTICAL);
-        contentArea.setPadding(20, 20, 20, 20);
+        contentArea.setPadding(24, 24, 24, 24);
         scrollView.addView(contentArea);
 
         for (int i = 0; i < tabNames.length; i++) {
@@ -121,17 +127,16 @@ public class MainActivity extends Activity {
 
         main.addView(tabBar);
 
-        View div = new View(this);
-        div.setBackgroundColor(BORDER);
-        main.addView(div, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+        View div2 = new View(this);
+        div2.setBackgroundColor(Color.parseColor("#222222"));
+        main.addView(div2, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
-        main.addView(scrollView, scrollParams);
+        main.addView(scrollView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        // Output console at bottom
+        // Output console
         outputView = new TextView(this);
-        outputView.setText("YeepsMod ready. Run ADB commands above.");
+        outputView.setText("emder.lol ready.");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
@@ -144,16 +149,15 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
-    // ── Run ADB/shell command ─────────────────────────────────────────────
     private String runCmd(String cmd) {
         try {
             Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
-            BufferedReader stdout = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            BufferedReader stderr = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+            BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
             StringBuilder sb = new StringBuilder();
             String line;
-            while ((line = stdout.readLine()) != null) sb.append(line).append("\n");
-            while ((line = stderr.readLine()) != null) sb.append("[ERR] ").append(line).append("\n");
+            while ((line = out.readLine()) != null) sb.append(line).append("\n");
+            while ((line = err.readLine()) != null) sb.append("[ERR] ").append(line).append("\n");
             p.waitFor();
             return sb.length() > 0 ? sb.toString().trim() : "Done.";
         } catch (Exception e) {
@@ -170,45 +174,37 @@ public class MainActivity extends Activity {
 
     // ── Players Tab ───────────────────────────────────────────────────────
     private void buildPlayersTab(LinearLayout c) {
-        addSectionLabel(c, "Players in Lobby");
-        addBtn(c, "↻ Refresh", ACCENT, Color.BLACK, v -> {
-            Toast.makeText(this, "Join a Yeeps lobby first!", Toast.LENGTH_SHORT).show();
-        });
-        addBtn(c, "Show Photon Room Info", BTN, Color.WHITE, v ->
-            runAndShow("dumpsys activity com.TrassGames.G2Companion"));
+        addSectionLabel(c, "Players");
+        addSubLabel(c, "Player list requires Yeeps to be patched first");
+        addBtn(c, "↻ Refresh Players", ACCENT, Color.BLACK, v ->
+            Toast.makeText(this, "Patch Yeeps first via the Patcher tab!", Toast.LENGTH_LONG).show());
+        addBtn(c, "Check if Yeeps is running", BTN, Color.WHITE, v ->
+            runAndShow("ps aux | grep -i yeep | grep -v grep"));
+        addBtn(c, "Launch Yeeps VR", BTN, Color.WHITE, v ->
+            runAndShow("am start -n com.TrassGames.Yeeps/com.unity3d.player.UnityPlayerActivity"));
+        addBtn(c, "Launch Yeeps Companion", BTN, Color.WHITE, v ->
+            runAndShow("am start -n com.TrassGames.G2Companion/com.unity3d.player.UnityPlayerActivity"));
     }
 
     // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Yeeps Mods");
-        addSubLabel(c, "These work after patching the Yeeps APK");
+        addSubLabel(c, "Patch Yeeps APK first — then these will work");
 
-        String[][] mods = {
-            {"God Mode", "setprop yeepsmod.godmode 1"},
-            {"Fly", "setprop yeepsmod.fly 1"},
-            {"No Clip", "setprop yeepsmod.noclip 1"},
-            {"Speed Boost", "setprop yeepsmod.speed 1"},
-            {"Spider Climb", "setprop yeepsmod.spider 1"},
-            {"Invisible", "setprop yeepsmod.invisible 1"},
-            {"Big Hands", "setprop yeepsmod.bighands 1"},
-            {"Super Push", "setprop yeepsmod.push 1"},
-            {"Full Bright", "setprop yeepsmod.fullbright 1"},
-            {"ESP", "setprop yeepsmod.esp 1"}
-        };
-
+        String[] mods = {"God Mode", "Fly", "No Clip", "Speed Boost",
+            "Spider Climb", "Invisible", "Big Hands", "Super Push", "Full Bright", "ESP"};
         boolean[] states = new boolean[mods.length];
+
         for (int i = 0; i < mods.length; i++) {
             final int idx = i;
-            final String name = mods[i][0];
-            final String onCmd = mods[i][1];
-            final String offCmd = onCmd.replace(" 1", " 0");
+            final String name = mods[i];
             Button btn = makeBtn(name + ": OFF", BTN, Color.WHITE);
             btn.setOnClickListener(v -> {
                 states[idx] = !states[idx];
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                runAndShow(states[idx] ? onCmd : offCmd);
+                outputView.setText(name + (states[idx] ? " enabled" : " disabled") + " — requires patched APK");
             });
             c.addView(btn);
         }
@@ -216,80 +212,90 @@ public class MainActivity extends Activity {
 
     // ── System Tab ────────────────────────────────────────────────────────
     private void buildSystemTab(LinearLayout c) {
-        addSectionLabel(c, "Quest System Settings");
+        addSectionLabel(c, "Quest System");
 
-        addSubLabel(c, "Refresh Rate");
-        String[][] rates = {
-            {"120hz", "setprop debug.oculus.refreshRate 120"},
-            {"90hz", "setprop debug.oculus.refreshRate 90"},
-            {"72hz", "setprop debug.oculus.refreshRate 72"},
-            {"60hz", "setprop debug.oculus.refreshRate 60"}
-        };
-        LinearLayout rateRow = makeRow();
-        for (String[] r : rates) {
-            Button b = makeSmallBtn(r[0], BTN, Color.WHITE);
-            b.setOnClickListener(v -> runAndShow(r[1]));
-            rateRow.addView(b);
-        }
-        c.addView(rateRow);
+        addSubLabel(c, "Open Settings Pages");
+        addBtn(c, "Open Quest Settings", BTN, Color.WHITE, v -> {
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_SETTINGS);
+                startActivity(i);
+            } catch (Exception e) {
+                outputView.setText("Error: " + e.getMessage());
+            }
+        });
 
-        addSubLabel(c, "Guardian");
-        LinearLayout guardRow = makeRow();
-        Button disableGuardian = makeSmallBtn("Disable", RED, Color.WHITE);
-        disableGuardian.setOnClickListener(v -> runAndShow("setprop debug.oculus.guardian.enable 0"));
-        Button enableGuardian = makeSmallBtn("Enable", BTN, Color.WHITE);
-        enableGuardian.setOnClickListener(v -> runAndShow("setprop debug.oculus.guardian.enable 1"));
-        guardRow.addView(disableGuardian);
-        guardRow.addView(enableGuardian);
-        c.addView(guardRow);
+        addBtn(c, "Open WiFi Settings", BTN, Color.WHITE, v -> {
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
+            } catch (Exception e) {
+                outputView.setText("Error: " + e.getMessage());
+            }
+        });
 
-        addSubLabel(c, "Resolution");
-        String[][] resolutions = {
-            {"2048 (High)", "setprop debug.oculus.textureWidth 2048"},
-            {"1536 (Default)", "setprop debug.oculus.textureWidth 1536"},
-            {"1024 (Low)", "setprop debug.oculus.textureWidth 1024"}
-        };
-        for (String[] r : resolutions) {
-            Button b = makeBtn(r[0], BTN, Color.WHITE);
-            b.setOnClickListener(v -> runAndShow(r[1]));
-            c.addView(b);
-        }
+        addBtn(c, "Open App Settings for Yeeps", BTN, Color.WHITE, v -> {
+            try {
+                Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                i.setData(Uri.parse("package:com.TrassGames.Yeeps"));
+                startActivity(i);
+            } catch (Exception e) {
+                outputView.setText("Error: " + e.getMessage());
+            }
+        });
 
-        addSubLabel(c, "Other");
-        addBtn(c, "Disable Chromatic Aberration", BTN, Color.WHITE, v ->
-            runAndShow("setprop debug.oculus.chromaticAberration 0"));
-        addBtn(c, "Enable Chromatic Aberration", BTN, Color.WHITE, v ->
-            runAndShow("setprop debug.oculus.chromaticAberration 1"));
-        addBtn(c, "Reboot Headset", RED, Color.WHITE, v ->
-            runAndShow("reboot"));
+        addSubLabel(c, "Device Info");
+        addBtn(c, "Battery Level", BTN, Color.WHITE, v ->
+            runAndShow("cat /sys/class/power_supply/battery/capacity"));
+        addBtn(c, "CPU Temperature", BTN, Color.WHITE, v ->
+            runAndShow("cat /sys/class/thermal/thermal_zone0/temp"));
+        addBtn(c, "Available Storage", BTN, Color.WHITE, v ->
+            runAndShow("df /sdcard | tail -1"));
+        addBtn(c, "IP Address", BTN, Color.WHITE, v ->
+            runAndShow("ip addr show wlan0 | grep 'inet '"));
+        addBtn(c, "Free Memory", BTN, Color.WHITE, v ->
+            runAndShow("cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable'"));
     }
 
     // ── Patcher Tab ───────────────────────────────────────────────────────
     private void buildPatcherTab(LinearLayout c) {
         addSectionLabel(c, "Yeeps APK Patcher");
-        addSubLabel(c, "Extract, patch and reinstall Yeeps with mods built in");
+        addSubLabel(c, "Extract and backup the Yeeps APK");
 
-        addBtn(c, "📦 Extract Yeeps APK", ACCENT, Color.BLACK, v -> {
-            runAndShow("pm path com.TrassGames.Yeeps");
+        addBtn(c, "📦 Find Yeeps APK Path", ACCENT, Color.BLACK, v ->
+            runAndShow("pm path com.TrassGames.Yeeps"));
+
+        addBtn(c, "📋 Yeeps Version Info", BTN, Color.WHITE, v ->
+            runAndShow("pm dump com.TrassGames.Yeeps | grep versionName"));
+
+        addBtn(c, "💾 Copy Yeeps APK to Downloads", ACCENT, Color.BLACK, v -> {
+            new Thread(() -> {
+                String path = runCmd("pm path com.TrassGames.Yeeps | cut -d: -f2 | tr -d ' \n'");
+                if (path.startsWith("/")) {
+                    String result = runCmd("cp " + path + " /sdcard/Download/Yeeps_backup.apk");
+                    runOnUiThread(() -> outputView.setText("Saved to /sdcard/Download/Yeeps_backup.apk\n" + result));
+                } else {
+                    runOnUiThread(() -> outputView.setText("Could not find Yeeps APK: " + path));
+                }
+            }).start();
         });
 
-        addBtn(c, "📋 List Installed Games", BTN, Color.WHITE, v ->
-            runAndShow("pm list packages | grep -i yeep"));
+        addBtn(c, "📊 List All Games", BTN, Color.WHITE, v ->
+            runAndShow("pm list packages | grep -v android | grep -v com.oculus | grep -v com.facebook | grep -v com.meta"));
 
-        addBtn(c, "📊 Yeeps App Info", BTN, Color.WHITE, v ->
-            runAndShow("dumpsys package com.TrassGames.Yeeps | grep -E 'versionName|versionCode|firstInstall'"));
-
-        addBtn(c, "🗂 List Yeeps Files", BTN, Color.WHITE, v ->
-            runAndShow("ls /data/app/com.TrassGames.Yeeps*/"));
-
-        addBtn(c, "💾 Copy APK to Storage", ACCENT, Color.BLACK, v ->
-            runAndShow("cp $(pm path com.TrassGames.Yeeps | cut -d: -f2) /sdcard/Yeeps_backup.apk && echo 'Saved to /sdcard/Yeeps_backup.apk'"));
+        addBtn(c, "📂 Open Downloads Folder", BTN, Color.WHITE, v -> {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setDataAndType(Uri.parse("content://com.android.externalstorage.documents/document/primary:Download"), "resource/folder");
+                startActivity(i);
+            } catch (Exception e) {
+                outputView.setText("Use a file manager to access /sdcard/Download/");
+            }
+        });
     }
 
     // ── ADB Tab ───────────────────────────────────────────────────────────
     private void buildADBTab(LinearLayout c) {
-        addSectionLabel(c, "ADB Command Runner");
-        addSubLabel(c, "Run any shell command directly on the Quest");
+        addSectionLabel(c, "Command Runner");
+        addSubLabel(c, "Run shell commands directly on the Quest");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -301,19 +307,20 @@ public class MainActivity extends Activity {
         cmdField.setTypeface(android.graphics.Typeface.MONOSPACE);
         c.addView(cmdField);
 
-        addBtn(c, "▶ Run Command", ACCENT, Color.BLACK, v -> {
+        addBtn(c, "▶ Run", ACCENT, Color.BLACK, v -> {
             String cmd = cmdField.getText().toString().trim();
             if (!cmd.isEmpty()) runAndShow(cmd);
         });
 
         addSubLabel(c, "Quick Commands");
         String[][] quick = {
-            {"List processes", "ps aux | grep -i yeep"},
-            {"Free memory", "free -m"},
-            {"CPU info", "cat /proc/cpuinfo | grep 'model name' | head -1"},
-            {"Battery", "dumpsys battery | grep level"},
-            {"IP Address", "ifconfig wlan0 | grep inet"},
-            {"Running apps", "am stack list"},
+            {"List running processes", "ps aux | grep -v grep | head -20"},
+            {"List all packages", "pm list packages"},
+            {"Free memory", "cat /proc/meminfo | grep Mem"},
+            {"CPU info", "cat /proc/cpuinfo | grep 'Hardware' | head -1"},
+            {"Android version", "getprop ro.build.version.release"},
+            {"Quest model", "getprop ro.product.model"},
+            {"List files in Downloads", "ls /sdcard/Download/"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -328,23 +335,26 @@ public class MainActivity extends Activity {
 
         addSubLabel(c, "Theme");
         LinearLayout themeRow = makeRow();
-        String[][] themes = {{"Default", "#2EC08B"}, {"Galaxy", "#7B2FBE"}, {"Hacker", "#00FF41"}, {"Red", "#FF3333"}};
+        String[][] themes = {
+            {"Default", "#2EC08B"},
+            {"Galaxy", "#7B2FBE"},
+            {"Hacker", "#00FF41"},
+            {"Red", "#FF3333"}
+        };
         for (String[] t : themes) {
             Button b = makeSmallBtn(t[0], BTN, Color.WHITE);
             b.setOnClickListener(v -> {
                 ACCENT = Color.parseColor(t[1]);
-                Toast.makeText(this, t[0] + " theme applied — restart to see fully", Toast.LENGTH_SHORT).show();
+                outputView.setTextColor(ACCENT);
+                Toast.makeText(this, t[0] + " theme applied!", Toast.LENGTH_SHORT).show();
             });
             themeRow.addView(b);
         }
         c.addView(themeRow);
 
-        addSubLabel(c, "App Info");
-        addBtn(c, "Open Quest Settings", BTN, Color.WHITE, v ->
-            runAndShow("am start -a android.settings.SETTINGS"));
-        addBtn(c, "Open File Manager", BTN, Color.WHITE, v ->
-            runAndShow("am start -n com.android.documentsui/.files.FilesActivity"));
-        addBtn(c, "App Version: 2.0", BTN, Color.GRAY, v -> {});
+        addSubLabel(c, "About");
+        addBtn(c, "emder.lol — Version 1.0", BTN, Color.GRAY, v ->
+            Toast.makeText(this, "emder.lol VR Mod Menu", Toast.LENGTH_SHORT).show());
     }
 
     // ── UI Helpers ────────────────────────────────────────────────────────
