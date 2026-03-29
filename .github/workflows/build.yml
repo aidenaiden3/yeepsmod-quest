@@ -19,30 +19,62 @@ jobs:
 
       - name: Install apktool
         run: |
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O apktool.jar
-          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
-          chmod +x apktool
-          sudo mv apktool /usr/local/bin/
-          sudo mv apktool.jar /usr/local/bin/
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
+          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
+          chmod +x /usr/local/bin/apktool
 
-      - name: Upload OVR APK to repo
+      - name: Decompile OVR APK
         run: |
-          wget -q "https://github.com/[yourusername]/yeepsmod-quest/releases/download/v1/OVR_Metrics_Tool.apk" -O ovr.apk || true
+          apktool d "OVR Metrics Tool_85.1.0.0.25.apk" -o ovr_decoded --force
 
+      - name: Inject YeepsMod activity
+        run: |
+          mkdir -p ovr_decoded/smali/com/yeepsmod
+          cat > ovr_decoded/smali/com/yeepsmod/ModActivity.smali << 'EOF'
+          .class public Lcom/yeepsmod/ModActivity;
+          .super Landroid/app/Activity;
 
-      - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: '8.1'
+          .method public constructor <init>()V
+              .registers 1
+              invoke-direct {p0}, Landroid/app/Activity;-><init>()V
+              return-void
+          .end method
 
-      - name: Generate wrapper
-        run: gradle wrapper --gradle-version 8.1
+          .method public onCreate(Landroid/os/Bundle;)V
+              .registers 2
+              invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+              return-void
+          .end method
+          EOF
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Add activity to manifest
+        run: |
+          python3 << 'PYEOF'
+          import re
+          with open('ovr_decoded/AndroidManifest.xml', 'r') as f:
+              content = f.read()
+          
+          new_activity = '''
+              <activity
+                  android:name="com.yeepsmod.ModActivity"
+                  android:exported="true"
+                  android:label="YeepsMod">
+                  <intent-filter>
+                      <action android:name="android.intent.action.MAIN"/>
+                      <category android:name="android.intent.category.LAUNCHER"/>
+                      <category android:name="com.oculus.intent.category.2D"/>
+                  </intent-filter>
+              </activity>'''
+          
+          content = content.replace('</application>', new_activity + '\n</application>')
+          with open('ovr_decoded/AndroidManifest.xml', 'w') as f:
+              f.write(content)
+          print("Manifest updated!")
+          PYEOF
 
-      - name: Build our mod APK
-        run: ./gradlew assembleRelease
+      - name: Recompile OVR APK
+        run: |
+          apktool b ovr_decoded -o yeepsmod_ovr_unsigned.apk
 
       - name: Generate keystore
         run: |
@@ -61,11 +93,11 @@ jobs:
             --ks-pass pass:yeepsmod123 \
             --key-pass pass:yeepsmod123 \
             --ks-key-alias yeepsmod \
-            --out app/build/outputs/apk/release/YeepsMod-signed.apk \
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            --out YeepsMod-OVR.apk \
+            yeepsmod_ovr_unsigned.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YeepsMod-Quest
-          path: app/build/outputs/apk/release/YeepsMod-signed.apk
+          name: YeepsMod-OVR
+          path: YeepsMod-OVR.apk
