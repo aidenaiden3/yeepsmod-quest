@@ -17,54 +17,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v2
 
-      - name: Install apktool
-        run: |
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
-          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
-          chmod +x /usr/local/bin/apktool
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: '8.1'
 
-      - name: Decompile OVR APK
-        run: |
-          apktool d "OVR Metrics Tool_85.1.0.0.25.apk" -o ovr_decoded --force
+      - name: Generate wrapper
+        run: gradle wrapper --gradle-version 8.1
 
-      - name: Inject YeepsMod smali
-        run: |
-          mkdir -p ovr_decoded/smali/com/yeepsmod
-          cat > ovr_decoded/smali/com/yeepsmod/ModActivity.smali << 'SMALI'
-          .class public Lcom/yeepsmod/ModActivity;
-          .super Landroid/app/Activity;
-          .method public constructor <init>()V
-              .registers 1
-              invoke-direct {p0}, Landroid/app/Activity;-><init>()V
-              return-void
-          .end method
-          .method public onCreate(Landroid/os/Bundle;)V
-              .registers 2
-              invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
-              return-void
-          .end method
-          SMALI
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-      - name: Modify manifest
-        run: |
-          python3 -c "
-          with open('ovr_decoded/AndroidManifest.xml', 'r') as f:
-              content = f.read()
-          content = content.replace('com.oculus.ovrmonitormetricsservice', 'com.yeepsmod.overlay')
-          new_activity = '<activity android:name=\"com.yeepsmod.ModActivity\" android:exported=\"true\" android:label=\"YeepsMod\"><intent-filter><action android:name=\"android.intent.action.MAIN\"/><category android:name=\"android.intent.category.LAUNCHER\"/><category android:name=\"com.oculus.intent.category.2D\"/></intent-filter></activity>'
-          content = content.replace('</application>', new_activity + '</application>')
-          with open('ovr_decoded/AndroidManifest.xml', 'w') as f:
-              f.write(content)
-          print('Done!')
-          "
-
-      - name: Fix smali references
-        run: |
-          find ovr_decoded/smali -name "*.smali" -exec sed -i 's|Lcom/oculus/ovrmonitormetricsservice/|Lcom/yeepsmod/overlay/|g' {} \;
-
-      - name: Recompile OVR APK
-        run: |
-          apktool b ovr_decoded -o yeepsmod_ovr_unsigned.apk
+      - name: Build APK
+        run: ./gradlew assembleRelease
 
       - name: Generate keystore
         run: |
@@ -83,11 +48,11 @@ jobs:
             --ks-pass pass:yeepsmod123 \
             --key-pass pass:yeepsmod123 \
             --ks-key-alias yeepsmod \
-            --out YeepsMod-OVR.apk \
-            yeepsmod_ovr_unsigned.apk
+            --out YeepsMod-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YeepsMod-OVR
-          path: YeepsMod-OVR.apk
+          name: YeepsMod-Quest
+          path: YeepsMod-signed.apk
