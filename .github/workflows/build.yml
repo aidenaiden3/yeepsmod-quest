@@ -47,12 +47,18 @@ jobs:
           .end method
           EOF
 
-      - name: Add activity to manifest
+            - name: Modify manifest
         run: |
-          python3 << 'PYEOF'
-          import re
+          python3 -c "
           with open('ovr_decoded/AndroidManifest.xml', 'r') as f:
               content = f.read()
+          content = content.replace('com.oculus.ovrmonitormetricsservice', 'com.yeepsmod.overlay')
+          new_activity = '<activity android:name=\"com.yeepsmod.ModActivity\" android:exported=\"true\" android:label=\"YeepsMod\"><intent-filter><action android:name=\"android.intent.action.MAIN\"/><category android:name=\"android.intent.category.LAUNCHER\"/><category android:name=\"com.oculus.intent.category.2D\"/></intent-filter></activity>'
+          content = content.replace('</application>', new_activity + '</application>')
+          with open('ovr_decoded/AndroidManifest.xml', 'w') as f:
+              f.write(content)
+          print('Done!')
+          "
 
       - name: Change package name
         run: |
