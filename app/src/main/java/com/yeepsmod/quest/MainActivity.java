@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -15,8 +16,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 public class MainActivity extends Activity {
 
@@ -70,12 +75,10 @@ public class MainActivity extends Activity {
 
         main.addView(header);
 
-        // Divider
         View div = new View(this);
         div.setBackgroundColor(Color.parseColor("#222222"));
         main.addView(div, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
-        // Tabs
         String[] tabNames = {"Players", "Mods", "System", "Patcher", "ADB", "Settings"};
         tabContents = new LinearLayout[tabNames.length];
         tabBtns = new Button[tabNames.length];
@@ -134,7 +137,6 @@ public class MainActivity extends Activity {
         main.addView(scrollView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        // Output console
         outputView = new TextView(this);
         outputView.setText("emder.lol ready.");
         outputView.setTextColor(ACCENT);
@@ -142,7 +144,7 @@ public class MainActivity extends Activity {
         outputView.setTextSize(10);
         outputView.setPadding(20, 10, 20, 10);
         outputView.setTypeface(android.graphics.Typeface.MONOSPACE);
-        outputView.setMaxLines(4);
+        outputView.setMaxLines(6);
         main.addView(outputView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -159,7 +161,7 @@ public class MainActivity extends Activity {
             while ((line = out.readLine()) != null) sb.append(line).append("\n");
             while ((line = err.readLine()) != null) sb.append("[ERR] ").append(line).append("\n");
             p.waitFor();
-            return sb.length() > 0 ? sb.toString().trim() : "Done.";
+            return sb.length() > 0 ? sb.toString().trim() : "No output.";
         } catch (Exception e) {
             return "Error: " + e.getMessage();
         }
@@ -172,27 +174,50 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private void show(String msg) {
+        outputView.setText(msg);
+    }
+
     // ── Players Tab ───────────────────────────────────────────────────────
     private void buildPlayersTab(LinearLayout c) {
         addSectionLabel(c, "Players");
-        addSubLabel(c, "Player list requires Yeeps to be patched first");
-        addBtn(c, "↻ Refresh Players", ACCENT, Color.BLACK, v ->
-            Toast.makeText(this, "Patch Yeeps first via the Patcher tab!", Toast.LENGTH_LONG).show());
-        addBtn(c, "Check if Yeeps is running", BTN, Color.WHITE, v ->
-            runAndShow("ps aux | grep -i yeep | grep -v grep"));
-        addBtn(c, "Launch Yeeps VR", BTN, Color.WHITE, v ->
-            runAndShow("am start -n com.TrassGames.Yeeps/com.unity3d.player.UnityPlayerActivity"));
-        addBtn(c, "Launch Yeeps Companion", BTN, Color.WHITE, v ->
-            runAndShow("am start -n com.TrassGames.G2Companion/com.unity3d.player.UnityPlayerActivity"));
+        addSubLabel(c, "Requires Shizuku or patched Yeeps to show real players");
+
+        addBtn(c, "Is Yeeps VR Running?", BTN, Color.WHITE, v ->
+            runAndShow("ps -A | grep -i yeep | grep -v grep"));
+
+        addBtn(c, "Is Companion Running?", BTN, Color.WHITE, v ->
+            runAndShow("ps -A | grep -i G2Companion | grep -v grep"));
+
+        addBtn(c, "Launch Yeeps VR", ACCENT, Color.BLACK, v -> {
+            try {
+                Intent i = getPackageManager().getLaunchIntentForPackage("com.TrassGames.Yeeps");
+                if (i != null) startActivity(i);
+                else show("Yeeps VR not found on this device");
+            } catch (Exception e) {
+                show("Error: " + e.getMessage());
+            }
+        });
+
+        addBtn(c, "Launch Companion App", BTN, Color.WHITE, v -> {
+            try {
+                Intent i = getPackageManager().getLaunchIntentForPackage("com.TrassGames.G2Companion");
+                if (i != null) startActivity(i);
+                else show("Companion app not found");
+            } catch (Exception e) {
+                show("Error: " + e.getMessage());
+            }
+        });
     }
 
     // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Yeeps Mods");
-        addSubLabel(c, "Patch Yeeps APK first — then these will work");
+        addSubLabel(c, "Patch Yeeps APK first via the Patcher tab");
 
         String[] mods = {"God Mode", "Fly", "No Clip", "Speed Boost",
-            "Spider Climb", "Invisible", "Big Hands", "Super Push", "Full Bright", "ESP"};
+            "Spider Climb", "Invisible", "Big Hands", "Super Push",
+            "Full Bright", "ESP"};
         boolean[] states = new boolean[mods.length];
 
         for (int i = 0; i < mods.length; i++) {
@@ -204,7 +229,7 @@ public class MainActivity extends Activity {
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                outputView.setText(name + (states[idx] ? " enabled" : " disabled") + " — requires patched APK");
+                show(name + (states[idx] ? " ON" : " OFF") + " — patch Yeeps first!");
             });
             c.addView(btn);
         }
@@ -214,32 +239,33 @@ public class MainActivity extends Activity {
     private void buildSystemTab(LinearLayout c) {
         addSectionLabel(c, "Quest System");
 
-        addSubLabel(c, "Open Settings Pages");
-        addBtn(c, "Open Quest Settings", BTN, Color.WHITE, v -> {
+        addSubLabel(c, "Settings Pages");
+        addBtn(c, "Open Developer Options", BTN, Color.WHITE, v -> {
             try {
-                Intent i = new Intent(android.provider.Settings.ACTION_SETTINGS);
-                startActivity(i);
-            } catch (Exception e) {
-                outputView.setText("Error: " + e.getMessage());
-            }
+                startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+            } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
         addBtn(c, "Open WiFi Settings", BTN, Color.WHITE, v -> {
             try {
-                startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS));
-            } catch (Exception e) {
-                outputView.setText("Error: " + e.getMessage());
-            }
+                startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+            } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
-        addBtn(c, "Open App Settings for Yeeps", BTN, Color.WHITE, v -> {
+        addBtn(c, "Open Yeeps App Settings", BTN, Color.WHITE, v -> {
             try {
-                Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                 i.setData(Uri.parse("package:com.TrassGames.Yeeps"));
                 startActivity(i);
-            } catch (Exception e) {
-                outputView.setText("Error: " + e.getMessage());
-            }
+            } catch (Exception e) { show("Yeeps not found"); }
+        });
+
+        addBtn(c, "Open Companion App Settings", BTN, Color.WHITE, v -> {
+            try {
+                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                i.setData(Uri.parse("package:com.TrassGames.G2Companion"));
+                startActivity(i);
+            } catch (Exception e) { show("Companion not found"); }
         });
 
         addSubLabel(c, "Device Info");
@@ -249,53 +275,146 @@ public class MainActivity extends Activity {
             runAndShow("cat /sys/class/thermal/thermal_zone0/temp"));
         addBtn(c, "Available Storage", BTN, Color.WHITE, v ->
             runAndShow("df /sdcard | tail -1"));
+        addBtn(c, "Free Memory", BTN, Color.WHITE, v ->
+            runAndShow("cat /proc/meminfo | grep -E 'MemFree|MemAvailable'"));
+        addBtn(c, "Quest Model", BTN, Color.WHITE, v ->
+            runAndShow("getprop ro.product.model"));
+        addBtn(c, "Android Version", BTN, Color.WHITE, v ->
+            runAndShow("getprop ro.build.version.release"));
         addBtn(c, "IP Address", BTN, Color.WHITE, v ->
             runAndShow("ip addr show wlan0 | grep 'inet '"));
-        addBtn(c, "Free Memory", BTN, Color.WHITE, v ->
-            runAndShow("cat /proc/meminfo | grep -E 'MemTotal|MemFree|MemAvailable'"));
     }
 
     // ── Patcher Tab ───────────────────────────────────────────────────────
     private void buildPatcherTab(LinearLayout c) {
-        addSectionLabel(c, "Yeeps APK Patcher");
-        addSubLabel(c, "Extract and backup the Yeeps APK");
+        addSectionLabel(c, "APK Patcher");
+        addSubLabel(c, "Find and backup game APKs");
 
-        addBtn(c, "📦 Find Yeeps APK Path", ACCENT, Color.BLACK, v ->
-            runAndShow("pm path com.TrassGames.Yeeps"));
+        addBtn(c, "📦 Find Yeeps VR APK", ACCENT, Color.BLACK, v ->
+            runAndShow("pm path com.TrassGames.Yeeps 2>&1"));
 
-        addBtn(c, "📋 Yeeps Version Info", BTN, Color.WHITE, v ->
-            runAndShow("pm dump com.TrassGames.Yeeps | grep versionName"));
+        addBtn(c, "📦 Find Companion APK", BTN, Color.WHITE, v ->
+            runAndShow("pm path com.TrassGames.G2Companion 2>&1"));
 
-        addBtn(c, "💾 Copy Yeeps APK to Downloads", ACCENT, Color.BLACK, v -> {
+        addBtn(c, "📋 Yeeps Version", BTN, Color.WHITE, v -> {
             new Thread(() -> {
-                String path = runCmd("pm path com.TrassGames.Yeeps | cut -d: -f2 | tr -d ' \n'");
-                if (path.startsWith("/")) {
-                    String result = runCmd("cp " + path + " /sdcard/Download/Yeeps_backup.apk");
-                    runOnUiThread(() -> outputView.setText("Saved to /sdcard/Download/Yeeps_backup.apk\n" + result));
-                } else {
-                    runOnUiThread(() -> outputView.setText("Could not find Yeeps APK: " + path));
+                try {
+                    android.content.pm.PackageInfo info = getPackageManager()
+                        .getPackageInfo("com.TrassGames.Yeeps", 0);
+                    runOnUiThread(() -> show("Yeeps VR v" + info.versionName +
+                        " (code " + info.versionCode + ")"));
+                } catch (Exception e) {
+                    runOnUiThread(() -> show("Yeeps VR not found on this device"));
                 }
             }).start();
         });
 
-        addBtn(c, "📊 List All Games", BTN, Color.WHITE, v ->
-            runAndShow("pm list packages | grep -v android | grep -v com.oculus | grep -v com.facebook | grep -v com.meta"));
+        addBtn(c, "📋 Companion Version", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                try {
+                    android.content.pm.PackageInfo info = getPackageManager()
+                        .getPackageInfo("com.TrassGames.G2Companion", 0);
+                    runOnUiThread(() -> show("Companion v" + info.versionName +
+                        " (code " + info.versionCode + ")"));
+                } catch (Exception e) {
+                    runOnUiThread(() -> show("Companion app not found on this device"));
+                }
+            }).start();
+        });
 
-        addBtn(c, "📂 Open Downloads Folder", BTN, Color.WHITE, v -> {
-            try {
-                Intent i = new Intent(Intent.ACTION_VIEW);
-                i.setDataAndType(Uri.parse("content://com.android.externalstorage.documents/document/primary:Download"), "resource/folder");
-                startActivity(i);
-            } catch (Exception e) {
-                outputView.setText("Use a file manager to access /sdcard/Download/");
-            }
+        addBtn(c, "💾 Copy Yeeps APK to Downloads", ACCENT, Color.BLACK, v -> {
+            new Thread(() -> {
+                try {
+                    android.content.pm.ApplicationInfo appInfo = getPackageManager()
+                        .getApplicationInfo("com.TrassGames.Yeeps", 0);
+                    String apkPath = appInfo.sourceDir;
+                    runOnUiThread(() -> show("Found APK at: " + apkPath + "\nCopying..."));
+
+                    File src = new File(apkPath);
+                    File dst = new File("/sdcard/Download/Yeeps_backup.apk");
+                    InputStream in = new FileInputStream(src);
+                    OutputStream out = new FileOutputStream(dst);
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
+                    in.close();
+                    out.close();
+
+                    runOnUiThread(() -> show("✓ Saved to /sdcard/Download/Yeeps_backup.apk\nSize: " + dst.length() / 1024 / 1024 + " MB"));
+                } catch (Exception e) {
+                    runOnUiThread(() -> show("Error: " + e.getMessage() +
+                        "\nYeeps VR may not be installed on this Quest"));
+                }
+            }).start();
+        });
+
+        addBtn(c, "💾 Copy Companion APK to Downloads", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                try {
+                    android.content.pm.ApplicationInfo appInfo = getPackageManager()
+                        .getApplicationInfo("com.TrassGames.G2Companion", 0);
+                    String apkPath = appInfo.sourceDir;
+                    File src = new File(apkPath);
+                    File dst = new File("/sdcard/Download/YeepsCompanion_backup.apk");
+                    InputStream in = new FileInputStream(src);
+                    OutputStream out = new FileOutputStream(dst);
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
+                    in.close();
+                    out.close();
+                    runOnUiThread(() -> show("✓ Saved to /sdcard/Download/YeepsCompanion_backup.apk\nSize: " + dst.length() / 1024 / 1024 + " MB"));
+                } catch (Exception e) {
+                    runOnUiThread(() -> show("Error: " + e.getMessage()));
+                }
+            }).start();
+        });
+
+        addBtn(c, "📊 List All Sideloaded Apps", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                StringBuilder sb = new StringBuilder("Installed packages:\n");
+                try {
+                    java.util.List<android.content.pm.PackageInfo> packages =
+                        getPackageManager().getInstalledPackages(0);
+                    for (android.content.pm.PackageInfo pkg : packages) {
+                        if ((pkg.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0) {
+                            sb.append("• ").append(pkg.packageName).append("\n");
+                        }
+                    }
+                } catch (Exception e) {
+                    sb.append("Error: ").append(e.getMessage());
+                }
+                String result = sb.toString();
+                runOnUiThread(() -> show(result.length() > 500 ? result.substring(0, 500) + "..." : result));
+            }).start();
+        });
+
+        addBtn(c, "📂 List Downloads Folder", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                File dir = new File("/sdcard/Download/");
+                StringBuilder sb = new StringBuilder("Files in Downloads:\n");
+                if (dir.exists() && dir.isDirectory()) {
+                    File[] files = dir.listFiles();
+                    if (files != null && files.length > 0) {
+                        for (File f : files) {
+                            sb.append("• ").append(f.getName())
+                              .append(" (").append(f.length() / 1024).append(" KB)\n");
+                        }
+                    } else {
+                        sb.append("Empty folder");
+                    }
+                } else {
+                    sb.append("Could not access Downloads folder");
+                }
+                runOnUiThread(() -> show(sb.toString()));
+            }).start();
         });
     }
 
     // ── ADB Tab ───────────────────────────────────────────────────────────
     private void buildADBTab(LinearLayout c) {
         addSectionLabel(c, "Command Runner");
-        addSubLabel(c, "Run shell commands directly on the Quest");
+        addSubLabel(c, "Run shell commands on the Quest");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -314,13 +433,13 @@ public class MainActivity extends Activity {
 
         addSubLabel(c, "Quick Commands");
         String[][] quick = {
-            {"List running processes", "ps aux | grep -v grep | head -20"},
-            {"List all packages", "pm list packages"},
-            {"Free memory", "cat /proc/meminfo | grep Mem"},
-            {"CPU info", "cat /proc/cpuinfo | grep 'Hardware' | head -1"},
-            {"Android version", "getprop ro.build.version.release"},
-            {"Quest model", "getprop ro.product.model"},
-            {"List files in Downloads", "ls /sdcard/Download/"},
+            {"Quest Model", "getprop ro.product.model"},
+            {"Android Version", "getprop ro.build.version.release"},
+            {"Build Number", "getprop ro.build.display.id"},
+            {"CPU Info", "getprop ro.product.cpu.abi"},
+            {"Battery", "cat /sys/class/power_supply/battery/capacity"},
+            {"Uptime", "uptime"},
+            {"Hostname", "getprop net.hostname"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -346,7 +465,7 @@ public class MainActivity extends Activity {
             b.setOnClickListener(v -> {
                 ACCENT = Color.parseColor(t[1]);
                 outputView.setTextColor(ACCENT);
-                Toast.makeText(this, t[0] + " theme applied!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, t[0] + " theme!", Toast.LENGTH_SHORT).show();
             });
             themeRow.addView(b);
         }
@@ -354,7 +473,14 @@ public class MainActivity extends Activity {
 
         addSubLabel(c, "About");
         addBtn(c, "emder.lol — Version 1.0", BTN, Color.GRAY, v ->
-            Toast.makeText(this, "emder.lol VR Mod Menu", Toast.LENGTH_SHORT).show());
+            show("emder.lol VR Mod Menu\nMade for Yeeps"));
+        addBtn(c, "Get Shizuku for more features", ACCENT, Color.BLACK, v -> {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://shizuku.rikka.app/"));
+                startActivity(i);
+            } catch (Exception e) { show("Open shizuku.rikka.app in your browser"); }
+        });
     }
 
     // ── UI Helpers ────────────────────────────────────────────────────────
