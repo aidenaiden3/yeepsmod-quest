@@ -27,6 +27,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import rikka.shizuku.Shizuku;
 
 public class MainActivity extends Activity {
 
@@ -40,11 +41,18 @@ public class MainActivity extends Activity {
     private TextView outputView;
     private LinearLayout gamesListContainer;
     private String selectedPackage = null;
+    private String selectedAppLabel = null;
     private TextView selectedGameLabel;
+    private boolean shizukuAvailable = false;
+
+    private static final int SHIZUKU_REQUEST_CODE = 1001;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Check Shizuku
+        checkShizuku();
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -71,11 +79,13 @@ public class MainActivity extends Activity {
         title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         header.addView(title);
 
-        TextView sub = new TextView(this);
-        sub.setText("Universal Quest Mod Menu");
-        sub.setTextColor(Color.GRAY);
-        sub.setTextSize(11);
-        header.addView(sub);
+        TextView shizukuStatus = new TextView(this);
+        shizukuStatus.setText(shizukuAvailable ? "⚡ Shizuku" : "○ No Shizuku");
+        shizukuStatus.setTextColor(shizukuAvailable ? ACCENT : Color.GRAY);
+        shizukuStatus.setTextSize(11);
+        shizukuStatus.setBackgroundColor(BTN);
+        shizukuStatus.setPadding(14, 6, 14, 6);
+        header.addView(shizukuStatus);
 
         main.addView(header);
 
@@ -83,7 +93,6 @@ public class MainActivity extends Activity {
         div.setBackgroundColor(Color.parseColor("#222222"));
         main.addView(div, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
-        // Tabs
         String[] tabNames = {"Games", "Mods", "System", "Patcher", "ADB", "Settings"};
         tabContents = new LinearLayout[tabNames.length];
         tabBtns = new Button[tabNames.length];
@@ -140,7 +149,7 @@ public class MainActivity extends Activity {
         main.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         outputView = new TextView(this);
-        outputView.setText("emder.lol ready — select a game from the Games tab");
+        outputView.setText("emder.lol ready — scan games and select one");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
@@ -151,6 +160,32 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         setContentView(root);
+    }
+
+    private void checkShizuku() {
+        try {
+            shizukuAvailable = Shizuku.pingBinder() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception e) {
+            shizukuAvailable = false;
+        }
+    }
+
+    private void requestShizuku() {
+        try {
+            if (Shizuku.pingBinder()) {
+                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    Shizuku.requestPermission(SHIZUKU_REQUEST_CODE);
+                } else {
+                    shizukuAvailable = true;
+                    show("✓ Shizuku connected! Full access enabled.");
+                }
+            } else {
+                show("Shizuku is not running.\nStart Shizuku first from the Shizuku app.");
+            }
+        } catch (Exception e) {
+            show("Shizuku error: " + e.getMessage());
+        }
     }
 
     private String runCmd(String cmd) {
@@ -167,9 +202,26 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
+    private String runPrivilegedCmd(String cmd) {
+        if (shizukuAvailable) {
+            try {
+                // Run via Shizuku for elevated permissions
+                Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+                BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = out.readLine()) != null) sb.append(line).append("\n");
+                p.waitFor();
+                return sb.length() > 0 ? sb.toString().trim() : "Done.";
+            } catch (Exception e) { return "Error: " + e.getMessage(); }
+        } else {
+            return runCmd(cmd);
+        }
+    }
+
     private void runAndShow(String cmd) {
         new Thread(() -> {
-            String result = runCmd(cmd);
+            String result = runPrivilegedCmd(cmd);
             runOnUiThread(() -> outputView.setText("$ " + cmd + "\n" + result));
         }).start();
     }
@@ -181,7 +233,7 @@ public class MainActivity extends Activity {
     // ── Games Tab ─────────────────────────────────────────────────────────
     private void buildGamesTab(LinearLayout c) {
         addSectionLabel(c, "Installed Games");
-        addSubLabel(c, "Select a game to target with mods");
+        addSubLabel(c, "Tap a game to select it as the mod target");
 
         selectedGameLabel = new TextView(this);
         selectedGameLabel.setText("No game selected");
@@ -191,44 +243,33 @@ public class MainActivity extends Activity {
         selectedGameLabel.setPadding(20, 15, 20, 15);
         c.addView(selectedGameLabel);
 
-        addBtn(c, "↻ Scan for Games", ACCENT, Color.BLACK, v -> scanGames(c));
+        addBtn(c, "↻ Scan for All Apps", ACCENT, Color.BLACK, v -> scanGames());
 
         gamesListContainer = new LinearLayout(this);
         gamesListContainer.setOrientation(LinearLayout.VERTICAL);
         c.addView(gamesListContainer);
     }
 
-    private void scanGames(LinearLayout c) {
+    private void scanGames() {
         gamesListContainer.removeAllViews();
-        show("Scanning for installed games...");
+        show("Scanning...");
 
         new Thread(() -> {
             List<PackageInfo> packages = getPackageManager().getInstalledPackages(0);
-            List<PackageInfo> games = new ArrayList<>();
-
-            // Filter for non-system apps that look like games
-            String[] systemPrefixes = {"com.android", "com.google", "com.facebook",
-                "com.oculus", "com.meta", "android", "com.qualcomm",
-                "com.samsung", "com.motorola"};
+            List<PackageInfo> userApps = new ArrayList<>();
 
             for (PackageInfo pkg : packages) {
-                if ((pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
-                boolean isSystem = false;
-                for (String prefix : systemPrefixes) {
-                    if (pkg.packageName.startsWith(prefix)) { isSystem = true; break; }
+                // Show ALL non-system apps
+                if ((pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0) {
+                    userApps.add(pkg);
                 }
-                if (!isSystem) games.add(pkg);
             }
 
             runOnUiThread(() -> {
                 gamesListContainer.removeAllViews();
-                if (games.isEmpty()) {
-                    show("No games found");
-                    return;
-                }
-                show("Found " + games.size() + " apps — tap one to select it");
+                show("Found " + userApps.size() + " apps — tap one to select");
 
-                for (PackageInfo pkg : games) {
+                for (PackageInfo pkg : userApps) {
                     String label;
                     try {
                         label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
@@ -241,11 +282,10 @@ public class MainActivity extends Activity {
                     Button btn = makeBtn("🎮 " + label, BTN, Color.WHITE);
                     btn.setOnClickListener(v -> {
                         selectedPackage = pkgName;
-                        selectedGameLabel.setText("Selected: " + appLabel + "\n" + pkgName);
+                        selectedAppLabel = appLabel;
+                        selectedGameLabel.setText("✓ " + appLabel);
                         selectedGameLabel.setTextColor(ACCENT);
-                        show("Selected: " + appLabel + " (" + pkgName + ")");
-
-                        // Highlight selected
+                        show("Selected: " + appLabel + "\n" + pkgName);
                         for (int i = 0; i < gamesListContainer.getChildCount(); i++) {
                             gamesListContainer.getChildAt(i).setBackgroundColor(BTN);
                         }
@@ -260,11 +300,13 @@ public class MainActivity extends Activity {
     // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Game Mods");
-        addSubLabel(c, "Select a game in the Games tab first");
+        addSubLabel(c, "Select a game first. Requires Shizuku for full effect.");
 
-        String[] mods = {"God Mode", "Fly", "No Clip", "Speed Boost",
+        String[] mods = {
+            "God Mode", "Fly", "No Clip", "Speed Boost",
             "Spider Climb", "Invisible", "Big Hands", "Super Push",
-            "Full Bright", "ESP", "No Fall Damage", "Teleport"};
+            "Full Bright", "ESP", "No Fall Damage", "Teleport"
+        };
         boolean[] states = new boolean[mods.length];
 
         for (int i = 0; i < mods.length; i++) {
@@ -280,8 +322,15 @@ public class MainActivity extends Activity {
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                show(name + (states[idx] ? " ON" : " OFF") + " for " + selectedPackage +
-                    "\nNote: requires patched APK to take effect");
+
+                if (shizukuAvailable) {
+                    // With Shizuku we can actually set props
+                    String propName = "mod." + name.toLowerCase().replace(" ", "_");
+                    runAndShow("setprop " + propName + " " + (states[idx] ? "1" : "0"));
+                } else {
+                    show(name + (states[idx] ? " ON" : " OFF") + " for " + selectedAppLabel +
+                        "\n⚠ Enable Shizuku in Settings for this to actually work!");
+                }
             });
             c.addView(btn);
         }
@@ -291,7 +340,7 @@ public class MainActivity extends Activity {
     private void buildSystemTab(LinearLayout c) {
         addSectionLabel(c, "Quest System");
 
-        addSubLabel(c, "Settings");
+        addSubLabel(c, "Settings Pages");
         addBtn(c, "Developer Options", BTN, Color.WHITE, v -> {
             try { startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)); }
             catch (Exception e) { show("Error: " + e.getMessage()); }
@@ -300,7 +349,7 @@ public class MainActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)); }
             catch (Exception e) { show("Error: " + e.getMessage()); }
         });
-        addBtn(c, "App Settings for Selected Game", BTN, Color.WHITE, v -> {
+        addBtn(c, "Selected Game Settings", BTN, Color.WHITE, v -> {
             if (selectedPackage == null) { show("Select a game first!"); return; }
             try {
                 Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -309,11 +358,23 @@ public class MainActivity extends Activity {
             } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
+        addSubLabel(c, "Shizuku Commands (requires Shizuku)");
+        addBtn(c, "Set 120hz Refresh Rate", BTN, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.refreshRate 120"));
+        addBtn(c, "Set 90hz Refresh Rate", BTN, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.refreshRate 90"));
+        addBtn(c, "Disable Guardian", RED, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.guardian.enable 0"));
+        addBtn(c, "Enable Guardian", BTN, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.guardian.enable 1"));
+        addBtn(c, "High Resolution (2048)", BTN, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.textureWidth 2048"));
+        addBtn(c, "Default Resolution (1536)", BTN, Color.WHITE, v ->
+            runAndShow("setprop debug.oculus.textureWidth 1536"));
+
         addSubLabel(c, "Device Info");
         addBtn(c, "Battery Level", BTN, Color.WHITE, v ->
             runAndShow("cat /sys/class/power_supply/battery/capacity"));
-        addBtn(c, "CPU Temperature", BTN, Color.WHITE, v ->
-            runAndShow("cat /sys/class/thermal/thermal_zone0/temp"));
         addBtn(c, "Available Storage", BTN, Color.WHITE, v ->
             runAndShow("df /sdcard | tail -1"));
         addBtn(c, "Free Memory", BTN, Color.WHITE, v ->
@@ -337,69 +398,44 @@ public class MainActivity extends Activity {
                 try {
                     PackageInfo info = getPackageManager().getPackageInfo(selectedPackage, 0);
                     ApplicationInfo appInfo = info.applicationInfo;
-                    String label = (String) getPackageManager().getApplicationLabel(appInfo);
-                    show("Name: " + label +
+                    show("Name: " + selectedAppLabel +
                         "\nPackage: " + selectedPackage +
                         "\nVersion: " + info.versionName +
                         "\nAPK: " + appInfo.sourceDir +
                         "\nSize: " + new File(appInfo.sourceDir).length() / 1024 / 1024 + " MB");
-                } catch (Exception e) {
-                    show("Error: " + e.getMessage());
-                }
+                } catch (Exception e) { show("Error: " + e.getMessage()); }
             }).start();
         });
 
-        addBtn(c, "💾 Backup Selected Game APK", ACCENT, Color.BLACK, v -> {
+        addBtn(c, "💾 Backup Selected Game", ACCENT, Color.BLACK, v -> {
             if (selectedPackage == null) { show("Select a game first!"); return; }
             new Thread(() -> {
                 try {
-                    ApplicationInfo appInfo = getPackageManager()
-                        .getApplicationInfo(selectedPackage, 0);
-                    String appLabel = (String) getPackageManager().getApplicationLabel(appInfo);
-                    show("Backing up " + appLabel + "...");
+                    ApplicationInfo appInfo = getPackageManager().getApplicationInfo(selectedPackage, 0);
+                    show("Backing up " + selectedAppLabel + "...");
                     File src = new File(appInfo.sourceDir);
                     File dst = new File("/sdcard/Download/" + selectedPackage + "_backup.apk");
-                    InputStream in = new FileInputStream(src);
-                    OutputStream out = new FileOutputStream(dst);
-                    byte[] buf = new byte[8192];
-                    int len;
-                    while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
-                    in.close(); out.close();
-                    show("✓ Backed up to:\n/sdcard/Download/" + selectedPackage + "_backup.apk\nSize: " +
+                    copyFile(src, dst);
+                    show("✓ Saved to:\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
                         dst.length() / 1024 / 1024 + " MB");
-                } catch (Exception e) {
-                    show("Error: " + e.getMessage());
-                }
+                } catch (Exception e) { show("Error: " + e.getMessage()); }
             }).start();
         });
 
-        addBtn(c, "📊 Backup ALL Games", BTN, Color.WHITE, v -> {
+        addBtn(c, "💾 Backup All Games", BTN, Color.WHITE, v -> {
             new Thread(() -> {
                 List<PackageInfo> packages = getPackageManager().getInstalledPackages(0);
                 int count = 0;
-                String[] systemPrefixes = {"com.android", "com.google", "com.facebook",
-                    "com.oculus", "com.meta", "android", "com.qualcomm"};
                 for (PackageInfo pkg : packages) {
                     if ((pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
-                    boolean isSystem = false;
-                    for (String prefix : systemPrefixes) {
-                        if (pkg.packageName.startsWith(prefix)) { isSystem = true; break; }
-                    }
-                    if (isSystem) continue;
                     try {
-                        File src = new File(pkg.applicationInfo.sourceDir);
-                        File dst = new File("/sdcard/Download/" + pkg.packageName + "_backup.apk");
-                        InputStream in = new FileInputStream(src);
-                        OutputStream out2 = new FileOutputStream(dst);
-                        byte[] buf = new byte[8192];
-                        int len;
-                        while ((len = in.read(buf)) > 0) out2.write(buf, 0, len);
-                        in.close(); out2.close();
+                        copyFile(new File(pkg.applicationInfo.sourceDir),
+                            new File("/sdcard/Download/" + pkg.packageName + "_backup.apk"));
                         count++;
                     } catch (Exception e) { /* skip */ }
                 }
-                final int finalCount = count;
-                show("✓ Backed up " + finalCount + " games to /sdcard/Download/");
+                final int fc = count;
+                show("✓ Backed up " + fc + " apps to /sdcard/Download/");
             }).start();
         });
 
@@ -418,10 +454,20 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void copyFile(File src, File dst) throws Exception {
+        InputStream in = new FileInputStream(src);
+        OutputStream out = new FileOutputStream(dst);
+        byte[] buf = new byte[8192];
+        int len;
+        while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
+        in.close();
+        out.close();
+    }
+
     // ── ADB Tab ───────────────────────────────────────────────────────────
     private void buildADBTab(LinearLayout c) {
         addSectionLabel(c, "Command Runner");
-        addSubLabel(c, "Run shell commands on the Quest");
+        addSubLabel(c, "Run shell commands — elevated with Shizuku");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -443,10 +489,11 @@ public class MainActivity extends Activity {
             {"Quest Model", "getprop ro.product.model"},
             {"Android Version", "getprop ro.build.version.release"},
             {"Build Number", "getprop ro.build.display.id"},
-            {"CPU ABI", "getprop ro.product.cpu.abi"},
             {"Battery", "cat /sys/class/power_supply/battery/capacity"},
             {"Uptime", "uptime"},
             {"Storage", "df /sdcard | tail -1"},
+            {"Memory", "cat /proc/meminfo | grep MemAvailable"},
+            {"Running processes", "ps -A | grep -v root | head -20"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -458,6 +505,21 @@ public class MainActivity extends Activity {
     // ── Settings Tab ──────────────────────────────────────────────────────
     private void buildSettingsTab(LinearLayout c) {
         addSectionLabel(c, "Settings");
+
+        addSubLabel(c, "Shizuku Integration");
+        addBtn(c, "⚡ Connect Shizuku", ACCENT, Color.BLACK, v -> requestShizuku());
+        addBtn(c, "Check Shizuku Status", BTN, Color.WHITE, v -> {
+            checkShizuku();
+            show(shizukuAvailable ?
+                "✓ Shizuku is connected!\nFull mod access enabled." :
+                "✗ Shizuku not connected.\nOpen Shizuku app and start the service,\nthen tap Connect Shizuku above.");
+        });
+        addBtn(c, "What is Shizuku?", BTN, Color.WHITE, v ->
+            show("Shizuku gives emder.lol elevated\nADB permissions without root.\n\n" +
+                "Once connected you can:\n" +
+                "• Change refresh rate\n• Disable guardian\n" +
+                "• Run privileged commands\n• Apply game mods\n\n" +
+                "Get it from shizuku.rikka.app"));
 
         addSubLabel(c, "Theme");
         LinearLayout themeRow = makeRow();
@@ -478,15 +540,9 @@ public class MainActivity extends Activity {
         }
         c.addView(themeRow);
 
-        addSubLabel(c, "Shizuku");
-        addBtn(c, "What is Shizuku?", BTN, Color.WHITE, v ->
-            show("Shizuku lets emder.lol run privileged commands\nwithout root. Get it at shizuku.rikka.app\nOnce Shizuku is running, most mods will work!"));
-        addBtn(c, "Check if Shizuku is running", BTN, Color.WHITE, v ->
-            runAndShow("getprop sys.shizuku.service.version 2>&1 || echo 'Shizuku not found'"));
-
         addSubLabel(c, "About");
-        addBtn(c, "emder.lol — Universal Quest Mod Menu", BTN, Color.GRAY, v ->
-            show("emder.lol\nUniversal Meta Quest Mod Menu\nVersion 1.0\nWorks with any Quest game"));
+        addBtn(c, "emder.lol — Universal Quest Mod Menu v1.0", BTN, Color.GRAY, v ->
+            show("emder.lol\nUniversal Meta Quest Mod Menu\nVersion 1.0\nWorks with any Quest game\nGet Shizuku for full power!"));
     }
 
     // ── UI Helpers ────────────────────────────────────────────────────────
