@@ -4,11 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true"/>
 
     <application
         android:allowBackup="true"
-        android:label="YeepsMod"
+        android:label="emder.lol"
         android:requestLegacyExternalStorage="true">
 
         <activity
@@ -20,6 +21,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
 
     </application>
 </manifest>
