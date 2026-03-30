@@ -2,6 +2,9 @@ package com.yeepsmod.quest;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -19,9 +22,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
 
@@ -33,6 +38,9 @@ public class MainActivity extends Activity {
     private LinearLayout[] tabContents;
     private Button[] tabBtns;
     private TextView outputView;
+    private LinearLayout gamesListContainer;
+    private String selectedPackage = null;
+    private TextView selectedGameLabel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,7 +52,6 @@ public class MainActivity extends Activity {
         LinearLayout main = new LinearLayout(this);
         main.setOrientation(LinearLayout.VERTICAL);
         main.setBackgroundColor(BG);
-
         root.addView(main, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
@@ -61,17 +68,14 @@ public class MainActivity extends Activity {
         title.setTextColor(ACCENT);
         title.setTextSize(22);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        title.setLayoutParams(tlp);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         header.addView(title);
 
-        TextView ver = new TextView(this);
-        ver.setText("V1");
-        ver.setTextColor(Color.GRAY);
-        ver.setTextSize(11);
-        ver.setBackgroundColor(BTN);
-        ver.setPadding(14, 6, 14, 6);
-        header.addView(ver);
+        TextView sub = new TextView(this);
+        sub.setText("Universal Quest Mod Menu");
+        sub.setTextColor(Color.GRAY);
+        sub.setTextSize(11);
+        header.addView(sub);
 
         main.addView(header);
 
@@ -79,7 +83,8 @@ public class MainActivity extends Activity {
         div.setBackgroundColor(Color.parseColor("#222222"));
         main.addView(div, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
-        String[] tabNames = {"Players", "Mods", "System", "Patcher", "ADB", "Settings"};
+        // Tabs
+        String[] tabNames = {"Games", "Mods", "System", "Patcher", "ADB", "Settings"};
         tabContents = new LinearLayout[tabNames.length];
         tabBtns = new Button[tabNames.length];
 
@@ -110,7 +115,7 @@ public class MainActivity extends Activity {
             content.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
             tabContents[i] = content;
 
-            if (i == 0) buildPlayersTab(content);
+            if (i == 0) buildGamesTab(content);
             else if (i == 1) buildModsTab(content);
             else if (i == 2) buildSystemTab(content);
             else if (i == 3) buildPatcherTab(content);
@@ -129,16 +134,13 @@ public class MainActivity extends Activity {
         }
 
         main.addView(tabBar);
-
         View div2 = new View(this);
         div2.setBackgroundColor(Color.parseColor("#222222"));
         main.addView(div2, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
-
-        main.addView(scrollView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        main.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         outputView = new TextView(this);
-        outputView.setText("emder.lol ready.");
+        outputView.setText("emder.lol ready — select a game from the Games tab");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
@@ -162,9 +164,7 @@ public class MainActivity extends Activity {
             while ((line = err.readLine()) != null) sb.append("[ERR] ").append(line).append("\n");
             p.waitFor();
             return sb.length() > 0 ? sb.toString().trim() : "No output.";
-        } catch (Exception e) {
-            return "Error: " + e.getMessage();
-        }
+        } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
     private void runAndShow(String cmd) {
@@ -175,49 +175,96 @@ public class MainActivity extends Activity {
     }
 
     private void show(String msg) {
-        outputView.setText(msg);
+        runOnUiThread(() -> outputView.setText(msg));
     }
 
-    // ── Players Tab ───────────────────────────────────────────────────────
-    private void buildPlayersTab(LinearLayout c) {
-        addSectionLabel(c, "Players");
-        addSubLabel(c, "Requires Shizuku or patched Yeeps to show real players");
+    // ── Games Tab ─────────────────────────────────────────────────────────
+    private void buildGamesTab(LinearLayout c) {
+        addSectionLabel(c, "Installed Games");
+        addSubLabel(c, "Select a game to target with mods");
 
-        addBtn(c, "Is Yeeps VR Running?", BTN, Color.WHITE, v ->
-            runAndShow("ps -A | grep -i yeep | grep -v grep"));
+        selectedGameLabel = new TextView(this);
+        selectedGameLabel.setText("No game selected");
+        selectedGameLabel.setTextColor(Color.GRAY);
+        selectedGameLabel.setTextSize(12);
+        selectedGameLabel.setBackgroundColor(BTN);
+        selectedGameLabel.setPadding(20, 15, 20, 15);
+        c.addView(selectedGameLabel);
 
-        addBtn(c, "Is Companion Running?", BTN, Color.WHITE, v ->
-            runAndShow("ps -A | grep -i G2Companion | grep -v grep"));
+        addBtn(c, "↻ Scan for Games", ACCENT, Color.BLACK, v -> scanGames(c));
 
-        addBtn(c, "Launch Yeeps VR", ACCENT, Color.BLACK, v -> {
-            try {
-                Intent i = getPackageManager().getLaunchIntentForPackage("com.TrassGames.Yeeps");
-                if (i != null) startActivity(i);
-                else show("Yeeps VR not found on this device");
-            } catch (Exception e) {
-                show("Error: " + e.getMessage());
+        gamesListContainer = new LinearLayout(this);
+        gamesListContainer.setOrientation(LinearLayout.VERTICAL);
+        c.addView(gamesListContainer);
+    }
+
+    private void scanGames(LinearLayout c) {
+        gamesListContainer.removeAllViews();
+        show("Scanning for installed games...");
+
+        new Thread(() -> {
+            List<PackageInfo> packages = getPackageManager().getInstalledPackages(0);
+            List<PackageInfo> games = new ArrayList<>();
+
+            // Filter for non-system apps that look like games
+            String[] systemPrefixes = {"com.android", "com.google", "com.facebook",
+                "com.oculus", "com.meta", "android", "com.qualcomm",
+                "com.samsung", "com.motorola"};
+
+            for (PackageInfo pkg : packages) {
+                if ((pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+                boolean isSystem = false;
+                for (String prefix : systemPrefixes) {
+                    if (pkg.packageName.startsWith(prefix)) { isSystem = true; break; }
+                }
+                if (!isSystem) games.add(pkg);
             }
-        });
 
-        addBtn(c, "Launch Companion App", BTN, Color.WHITE, v -> {
-            try {
-                Intent i = getPackageManager().getLaunchIntentForPackage("com.TrassGames.G2Companion");
-                if (i != null) startActivity(i);
-                else show("Companion app not found");
-            } catch (Exception e) {
-                show("Error: " + e.getMessage());
-            }
-        });
+            runOnUiThread(() -> {
+                gamesListContainer.removeAllViews();
+                if (games.isEmpty()) {
+                    show("No games found");
+                    return;
+                }
+                show("Found " + games.size() + " apps — tap one to select it");
+
+                for (PackageInfo pkg : games) {
+                    String label;
+                    try {
+                        label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
+                    } catch (Exception e) {
+                        label = pkg.packageName;
+                    }
+                    final String pkgName = pkg.packageName;
+                    final String appLabel = label;
+
+                    Button btn = makeBtn("🎮 " + label, BTN, Color.WHITE);
+                    btn.setOnClickListener(v -> {
+                        selectedPackage = pkgName;
+                        selectedGameLabel.setText("Selected: " + appLabel + "\n" + pkgName);
+                        selectedGameLabel.setTextColor(ACCENT);
+                        show("Selected: " + appLabel + " (" + pkgName + ")");
+
+                        // Highlight selected
+                        for (int i = 0; i < gamesListContainer.getChildCount(); i++) {
+                            gamesListContainer.getChildAt(i).setBackgroundColor(BTN);
+                        }
+                        btn.setBackgroundColor(Color.parseColor("#0D3D2A"));
+                    });
+                    gamesListContainer.addView(btn);
+                }
+            });
+        }).start();
     }
 
     // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
-        addSectionLabel(c, "Yeeps Mods");
-        addSubLabel(c, "Patch Yeeps APK first via the Patcher tab");
+        addSectionLabel(c, "Game Mods");
+        addSubLabel(c, "Select a game in the Games tab first");
 
         String[] mods = {"God Mode", "Fly", "No Clip", "Speed Boost",
             "Spider Climb", "Invisible", "Big Hands", "Super Push",
-            "Full Bright", "ESP"};
+            "Full Bright", "ESP", "No Fall Damage", "Teleport"};
         boolean[] states = new boolean[mods.length];
 
         for (int i = 0; i < mods.length; i++) {
@@ -225,11 +272,16 @@ public class MainActivity extends Activity {
             final String name = mods[i];
             Button btn = makeBtn(name + ": OFF", BTN, Color.WHITE);
             btn.setOnClickListener(v -> {
+                if (selectedPackage == null) {
+                    show("⚠ Select a game in the Games tab first!");
+                    return;
+                }
                 states[idx] = !states[idx];
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                show(name + (states[idx] ? " ON" : " OFF") + " — patch Yeeps first!");
+                show(name + (states[idx] ? " ON" : " OFF") + " for " + selectedPackage +
+                    "\nNote: requires patched APK to take effect");
             });
             c.addView(btn);
         }
@@ -239,33 +291,22 @@ public class MainActivity extends Activity {
     private void buildSystemTab(LinearLayout c) {
         addSectionLabel(c, "Quest System");
 
-        addSubLabel(c, "Settings Pages");
-        addBtn(c, "Open Developer Options", BTN, Color.WHITE, v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-            } catch (Exception e) { show("Error: " + e.getMessage()); }
+        addSubLabel(c, "Settings");
+        addBtn(c, "Developer Options", BTN, Color.WHITE, v -> {
+            try { startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)); }
+            catch (Exception e) { show("Error: " + e.getMessage()); }
         });
-
-        addBtn(c, "Open WiFi Settings", BTN, Color.WHITE, v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
-            } catch (Exception e) { show("Error: " + e.getMessage()); }
+        addBtn(c, "WiFi Settings", BTN, Color.WHITE, v -> {
+            try { startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)); }
+            catch (Exception e) { show("Error: " + e.getMessage()); }
         });
-
-        addBtn(c, "Open Yeeps App Settings", BTN, Color.WHITE, v -> {
+        addBtn(c, "App Settings for Selected Game", BTN, Color.WHITE, v -> {
+            if (selectedPackage == null) { show("Select a game first!"); return; }
             try {
                 Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                i.setData(Uri.parse("package:com.TrassGames.Yeeps"));
+                i.setData(Uri.parse("package:" + selectedPackage));
                 startActivity(i);
-            } catch (Exception e) { show("Yeeps not found"); }
-        });
-
-        addBtn(c, "Open Companion App Settings", BTN, Color.WHITE, v -> {
-            try {
-                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                i.setData(Uri.parse("package:com.TrassGames.G2Companion"));
-                startActivity(i);
-            } catch (Exception e) { show("Companion not found"); }
+            } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
         addSubLabel(c, "Device Info");
@@ -288,126 +329,92 @@ public class MainActivity extends Activity {
     // ── Patcher Tab ───────────────────────────────────────────────────────
     private void buildPatcherTab(LinearLayout c) {
         addSectionLabel(c, "APK Patcher");
-        addSubLabel(c, "Find and backup game APKs");
+        addSubLabel(c, "Select a game in Games tab first");
 
-        addBtn(c, "📦 Find Yeeps VR APK", ACCENT, Color.BLACK, v ->
-            runAndShow("pm path com.TrassGames.Yeeps 2>&1"));
-
-        addBtn(c, "📦 Find Companion APK", BTN, Color.WHITE, v ->
-            runAndShow("pm path com.TrassGames.G2Companion 2>&1"));
-
-        addBtn(c, "📋 Yeeps Version", BTN, Color.WHITE, v -> {
+        addBtn(c, "📋 Selected Game Info", BTN, Color.WHITE, v -> {
+            if (selectedPackage == null) { show("Select a game first!"); return; }
             new Thread(() -> {
                 try {
-                    android.content.pm.PackageInfo info = getPackageManager()
-                        .getPackageInfo("com.TrassGames.Yeeps", 0);
-                    runOnUiThread(() -> show("Yeeps VR v" + info.versionName +
-                        " (code " + info.versionCode + ")"));
+                    PackageInfo info = getPackageManager().getPackageInfo(selectedPackage, 0);
+                    ApplicationInfo appInfo = info.applicationInfo;
+                    String label = (String) getPackageManager().getApplicationLabel(appInfo);
+                    show("Name: " + label +
+                        "\nPackage: " + selectedPackage +
+                        "\nVersion: " + info.versionName +
+                        "\nAPK: " + appInfo.sourceDir +
+                        "\nSize: " + new File(appInfo.sourceDir).length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    runOnUiThread(() -> show("Yeeps VR not found on this device"));
+                    show("Error: " + e.getMessage());
                 }
             }).start();
         });
 
-        addBtn(c, "📋 Companion Version", BTN, Color.WHITE, v -> {
+        addBtn(c, "💾 Backup Selected Game APK", ACCENT, Color.BLACK, v -> {
+            if (selectedPackage == null) { show("Select a game first!"); return; }
             new Thread(() -> {
                 try {
-                    android.content.pm.PackageInfo info = getPackageManager()
-                        .getPackageInfo("com.TrassGames.G2Companion", 0);
-                    runOnUiThread(() -> show("Companion v" + info.versionName +
-                        " (code " + info.versionCode + ")"));
-                } catch (Exception e) {
-                    runOnUiThread(() -> show("Companion app not found on this device"));
-                }
-            }).start();
-        });
-
-        addBtn(c, "💾 Copy Yeeps APK to Downloads", ACCENT, Color.BLACK, v -> {
-            new Thread(() -> {
-                try {
-                    android.content.pm.ApplicationInfo appInfo = getPackageManager()
-                        .getApplicationInfo("com.TrassGames.Yeeps", 0);
-                    String apkPath = appInfo.sourceDir;
-                    runOnUiThread(() -> show("Found APK at: " + apkPath + "\nCopying..."));
-
-                    File src = new File(apkPath);
-                    File dst = new File("/sdcard/Download/Yeeps_backup.apk");
+                    ApplicationInfo appInfo = getPackageManager()
+                        .getApplicationInfo(selectedPackage, 0);
+                    String appLabel = (String) getPackageManager().getApplicationLabel(appInfo);
+                    show("Backing up " + appLabel + "...");
+                    File src = new File(appInfo.sourceDir);
+                    File dst = new File("/sdcard/Download/" + selectedPackage + "_backup.apk");
                     InputStream in = new FileInputStream(src);
                     OutputStream out = new FileOutputStream(dst);
                     byte[] buf = new byte[8192];
                     int len;
                     while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
-                    in.close();
-                    out.close();
-
-                    runOnUiThread(() -> show("✓ Saved to /sdcard/Download/Yeeps_backup.apk\nSize: " + dst.length() / 1024 / 1024 + " MB"));
+                    in.close(); out.close();
+                    show("✓ Backed up to:\n/sdcard/Download/" + selectedPackage + "_backup.apk\nSize: " +
+                        dst.length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    runOnUiThread(() -> show("Error: " + e.getMessage() +
-                        "\nYeeps VR may not be installed on this Quest"));
+                    show("Error: " + e.getMessage());
                 }
             }).start();
         });
 
-        addBtn(c, "💾 Copy Companion APK to Downloads", BTN, Color.WHITE, v -> {
+        addBtn(c, "📊 Backup ALL Games", BTN, Color.WHITE, v -> {
             new Thread(() -> {
-                try {
-                    android.content.pm.ApplicationInfo appInfo = getPackageManager()
-                        .getApplicationInfo("com.TrassGames.G2Companion", 0);
-                    String apkPath = appInfo.sourceDir;
-                    File src = new File(apkPath);
-                    File dst = new File("/sdcard/Download/YeepsCompanion_backup.apk");
-                    InputStream in = new FileInputStream(src);
-                    OutputStream out = new FileOutputStream(dst);
-                    byte[] buf = new byte[8192];
-                    int len;
-                    while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
-                    in.close();
-                    out.close();
-                    runOnUiThread(() -> show("✓ Saved to /sdcard/Download/YeepsCompanion_backup.apk\nSize: " + dst.length() / 1024 / 1024 + " MB"));
-                } catch (Exception e) {
-                    runOnUiThread(() -> show("Error: " + e.getMessage()));
-                }
-            }).start();
-        });
-
-        addBtn(c, "📊 List All Sideloaded Apps", BTN, Color.WHITE, v -> {
-            new Thread(() -> {
-                StringBuilder sb = new StringBuilder("Installed packages:\n");
-                try {
-                    java.util.List<android.content.pm.PackageInfo> packages =
-                        getPackageManager().getInstalledPackages(0);
-                    for (android.content.pm.PackageInfo pkg : packages) {
-                        if ((pkg.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0) {
-                            sb.append("• ").append(pkg.packageName).append("\n");
-                        }
+                List<PackageInfo> packages = getPackageManager().getInstalledPackages(0);
+                int count = 0;
+                String[] systemPrefixes = {"com.android", "com.google", "com.facebook",
+                    "com.oculus", "com.meta", "android", "com.qualcomm"};
+                for (PackageInfo pkg : packages) {
+                    if ((pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+                    boolean isSystem = false;
+                    for (String prefix : systemPrefixes) {
+                        if (pkg.packageName.startsWith(prefix)) { isSystem = true; break; }
                     }
-                } catch (Exception e) {
-                    sb.append("Error: ").append(e.getMessage());
+                    if (isSystem) continue;
+                    try {
+                        File src = new File(pkg.applicationInfo.sourceDir);
+                        File dst = new File("/sdcard/Download/" + pkg.packageName + "_backup.apk");
+                        InputStream in = new FileInputStream(src);
+                        OutputStream out2 = new FileOutputStream(dst);
+                        byte[] buf = new byte[8192];
+                        int len;
+                        while ((len = in.read(buf)) > 0) out2.write(buf, 0, len);
+                        in.close(); out2.close();
+                        count++;
+                    } catch (Exception e) { /* skip */ }
                 }
-                String result = sb.toString();
-                runOnUiThread(() -> show(result.length() > 500 ? result.substring(0, 500) + "..." : result));
+                final int finalCount = count;
+                show("✓ Backed up " + finalCount + " games to /sdcard/Download/");
             }).start();
         });
 
-        addBtn(c, "📂 List Downloads Folder", BTN, Color.WHITE, v -> {
-            new Thread(() -> {
-                File dir = new File("/sdcard/Download/");
-                StringBuilder sb = new StringBuilder("Files in Downloads:\n");
-                if (dir.exists() && dir.isDirectory()) {
-                    File[] files = dir.listFiles();
-                    if (files != null && files.length > 0) {
-                        for (File f : files) {
-                            sb.append("• ").append(f.getName())
-                              .append(" (").append(f.length() / 1024).append(" KB)\n");
-                        }
-                    } else {
-                        sb.append("Empty folder");
-                    }
-                } else {
-                    sb.append("Could not access Downloads folder");
+        addBtn(c, "📂 List Downloads", BTN, Color.WHITE, v -> {
+            File dir = new File("/sdcard/Download/");
+            StringBuilder sb = new StringBuilder("Downloads:\n");
+            if (dir.exists()) {
+                File[] files = dir.listFiles();
+                if (files != null) {
+                    for (File f : files)
+                        sb.append("• ").append(f.getName())
+                          .append(" (").append(f.length() / 1024).append(" KB)\n");
                 }
-                runOnUiThread(() -> show(sb.toString()));
-            }).start();
+            }
+            show(sb.toString());
         });
     }
 
@@ -436,10 +443,10 @@ public class MainActivity extends Activity {
             {"Quest Model", "getprop ro.product.model"},
             {"Android Version", "getprop ro.build.version.release"},
             {"Build Number", "getprop ro.build.display.id"},
-            {"CPU Info", "getprop ro.product.cpu.abi"},
+            {"CPU ABI", "getprop ro.product.cpu.abi"},
             {"Battery", "cat /sys/class/power_supply/battery/capacity"},
             {"Uptime", "uptime"},
-            {"Hostname", "getprop net.hostname"},
+            {"Storage", "df /sdcard | tail -1"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -471,16 +478,15 @@ public class MainActivity extends Activity {
         }
         c.addView(themeRow);
 
+        addSubLabel(c, "Shizuku");
+        addBtn(c, "What is Shizuku?", BTN, Color.WHITE, v ->
+            show("Shizuku lets emder.lol run privileged commands\nwithout root. Get it at shizuku.rikka.app\nOnce Shizuku is running, most mods will work!"));
+        addBtn(c, "Check if Shizuku is running", BTN, Color.WHITE, v ->
+            runAndShow("getprop sys.shizuku.service.version 2>&1 || echo 'Shizuku not found'"));
+
         addSubLabel(c, "About");
-        addBtn(c, "emder.lol — Version 1.0", BTN, Color.GRAY, v ->
-            show("emder.lol VR Mod Menu\nMade for Yeeps"));
-        addBtn(c, "Get Shizuku for more features", ACCENT, Color.BLACK, v -> {
-            try {
-                Intent i = new Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://shizuku.rikka.app/"));
-                startActivity(i);
-            } catch (Exception e) { show("Open shizuku.rikka.app in your browser"); }
-        });
+        addBtn(c, "emder.lol — Universal Quest Mod Menu", BTN, Color.GRAY, v ->
+            show("emder.lol\nUniversal Meta Quest Mod Menu\nVersion 1.0\nWorks with any Quest game"));
     }
 
     // ── UI Helpers ────────────────────────────────────────────────────────
