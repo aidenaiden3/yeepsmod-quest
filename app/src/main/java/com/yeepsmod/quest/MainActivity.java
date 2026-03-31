@@ -148,13 +148,13 @@ public class MainActivity extends Activity {
         main.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         outputView = new TextView(this);
-        outputView.setText("emder.lol ready — scan apps and select one");
+        outputView.setText("emder.lol ready — scan games and select one");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
         outputView.setPadding(20, 10, 20, 10);
         outputView.setTypeface(android.graphics.Typeface.MONOSPACE);
-        outputView.setMaxLines(8);
+        outputView.setMaxLines(6);
         main.addView(outputView, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -177,10 +177,10 @@ public class MainActivity extends Activity {
                     Shizuku.requestPermission(SHIZUKU_REQUEST_CODE);
                 } else {
                     shizukuAvailable = true;
-                    show("✓ Shizuku connected!");
+                    show("✓ Shizuku connected! Full access enabled.");
                 }
             } else {
-                show("Shizuku not running.\nOpen Shizuku app and start the service first.");
+                show("Shizuku is not running.\nStart Shizuku first from the Shizuku app.");
             }
         } catch (Exception e) {
             show("Shizuku error: " + e.getMessage());
@@ -201,9 +201,21 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
+    private String runPrivilegedCmd(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+            BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = out.readLine()) != null) sb.append(line).append("\n");
+            p.waitFor();
+            return sb.length() > 0 ? sb.toString().trim() : "Done.";
+        } catch (Exception e) { return "Error: " + e.getMessage(); }
+    }
+
     private void runAndShow(String cmd) {
         new Thread(() -> {
-            String result = runCmd(cmd);
+            String result = runPrivilegedCmd(cmd);
             runOnUiThread(() -> outputView.setText("$ " + cmd + "\n" + result));
         }).start();
     }
@@ -234,52 +246,22 @@ public class MainActivity extends Activity {
 
     private void scanGames() {
         gamesListContainer.removeAllViews();
-        show("Scanning...");
+        show("Scanning all apps...");
 
         new Thread(() -> {
-            // Use multiple flags to catch everything including VR apps
+            List<PackageInfo> packages = getPackageManager().getInstalledPackages(0);
             List<PackageInfo> allApps = new ArrayList<>();
-            try {
-                allApps.addAll(getPackageManager().getInstalledPackages(
-                    PackageManager.GET_META_DATA));
-            } catch (Exception e) {
-                allApps.addAll(getPackageManager().getInstalledPackages(0));
+
+            // Show ALL apps - no filtering
+            for (PackageInfo pkg : packages) {
+                allApps.add(pkg);
             }
-
-            // Also try getting packages via shell as backup
-            List<String> shellPackages = new ArrayList<>();
-            try {
-                Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", "pm list packages"});
-                BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("package:")) {
-                        shellPackages.add(line.replace("package:", "").trim());
-                    }
-                }
-                p.waitFor();
-            } catch (Exception e) { /* ignore */ }
-
-            // Add any packages found via shell but not via PackageManager
-            List<String> existingPkgs = new ArrayList<>();
-            for (PackageInfo pkg : allApps) existingPkgs.add(pkg.packageName);
-
-            for (String pkg : shellPackages) {
-                if (!existingPkgs.contains(pkg)) {
-                    try {
-                        PackageInfo info = getPackageManager().getPackageInfo(pkg, 0);
-                        allApps.add(info);
-                    } catch (Exception e) { /* skip */ }
-                }
-            }
-
-            final List<PackageInfo> finalApps = allApps;
 
             runOnUiThread(() -> {
                 gamesListContainer.removeAllViews();
-                show("Found " + finalApps.size() + " apps — tap one to select");
+                show("Found " + allApps.size() + " apps — tap one to select");
 
-                for (PackageInfo pkg : finalApps) {
+                for (PackageInfo pkg : allApps) {
                     String label;
                     try {
                         label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
@@ -338,7 +320,7 @@ public class MainActivity extends Activity {
                     runAndShow("setprop " + propName + " " + (states[idx] ? "1" : "0"));
                 } else {
                     show(name + (states[idx] ? " ON" : " OFF") + " for " + selectedAppLabel +
-                        "\n⚠ Enable Shizuku in Settings for this to work!");
+                        "\n⚠ Enable Shizuku in Settings for this to actually work!");
                 }
             });
             c.addView(btn);
@@ -428,7 +410,7 @@ public class MainActivity extends Activity {
                     File src = new File(appInfo.sourceDir);
                     File dst = new File("/sdcard/Download/" + selectedPackage + "_backup.apk");
                     copyFile(src, dst);
-                    show("✓ Saved!\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
+                    show("✓ Saved to:\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
                         dst.length() / 1024 / 1024 + " MB");
                 } catch (Exception e) { show("Error: " + e.getMessage()); }
             }).start();
@@ -505,8 +487,7 @@ public class MainActivity extends Activity {
             {"Uptime", "uptime"},
             {"Storage", "df /sdcard | tail -1"},
             {"Memory", "cat /proc/meminfo | grep MemAvailable"},
-            {"List all packages", "pm list packages 2>&1"},
-            {"List user packages", "pm list packages -3 2>&1"},
+            {"Running processes", "ps -A | head -30"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -525,7 +506,7 @@ public class MainActivity extends Activity {
             checkShizuku();
             show(shizukuAvailable ?
                 "✓ Shizuku connected!\nFull access enabled." :
-                "✗ Shizuku not connected.\nOpen Shizuku app and start the service.");
+                "✗ Shizuku not connected.\nOpen Shizuku app, start the service,\nthen tap Connect Shizuku.");
         });
         addBtn(c, "What is Shizuku?", BTN, Color.WHITE, v ->
             show("Shizuku gives emder.lol elevated\nADB permissions without root.\n\n" +
