@@ -5,7 +5,7 @@ android {
     namespace 'com.yeepsmod.quest'
     defaultConfig {
         applicationId "com.yeepsmod.quest"
-        minSdk 23
+        minSdk 26
         targetSdk 33
         versionCode 1
         versionName "1.0"
