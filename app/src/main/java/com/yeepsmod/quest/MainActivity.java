@@ -207,12 +207,7 @@ public class MainActivity extends Activity {
 
     private String runCmd(String cmd) {
         try {
-            Process p;
-            if (shizukuAvailable) {
-                p = Shizuku.newProcess(new String[]{"sh", "-c", cmd}, null, null);
-            } else {
-                p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
-            }
+            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
             BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
             BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
             StringBuilder sb = new StringBuilder();
