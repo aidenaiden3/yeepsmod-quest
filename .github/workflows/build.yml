@@ -27,6 +27,11 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
+        
+      - name: Download ADB binary for ARM64
+        run: |
+          mkdir -p app/src/main/assets
+          wget -q https://github.com/rendiix/termux-adb/releases/download/v1.0.3/adb-arm64-v8a -O app/src/main/assets/adb
 
       - name: Build APK
         run: ./gradlew assembleRelease
