@@ -1,8 +1,8 @@
 package com.yeepsmod.quest;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -44,6 +44,8 @@ public class MainActivity extends Activity {
     private String selectedAppLabel = null;
     private TextView selectedGameLabel;
     private boolean shizukuAvailable = false;
+    private boolean adbConnected = false;
+    private String adbBinaryPath = null;
 
     private static final int SHIZUKU_REQUEST_CODE = 1001;
 
@@ -52,7 +54,7 @@ public class MainActivity extends Activity {
             if (requestCode == SHIZUKU_REQUEST_CODE) {
                 shizukuAvailable = grantResult == PackageManager.PERMISSION_GRANTED;
                 show(shizukuAvailable ?
-                    "✓ Shizuku connected! Full access enabled.\nNow tap Scan All Apps in the Games tab." :
+                    "✓ Shizuku connected!\nNow tap Scan All Apps in the Games tab." :
                     "✗ Shizuku permission denied.");
             }
         };
@@ -63,6 +65,7 @@ public class MainActivity extends Activity {
 
         Shizuku.addRequestPermissionResultListener(permissionResultListener);
         checkShizuku();
+        extractADB();
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -74,6 +77,7 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
 
+        // Header
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setBackgroundColor(Color.parseColor("#111111"));
@@ -88,13 +92,13 @@ public class MainActivity extends Activity {
         title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         header.addView(title);
 
-        TextView shizukuStatus = new TextView(this);
-        shizukuStatus.setText(shizukuAvailable ? "⚡ Shizuku" : "○ No Shizuku");
-        shizukuStatus.setTextColor(shizukuAvailable ? ACCENT : Color.GRAY);
-        shizukuStatus.setTextSize(11);
-        shizukuStatus.setBackgroundColor(BTN);
-        shizukuStatus.setPadding(14, 6, 14, 6);
-        header.addView(shizukuStatus);
+        TextView statusView = new TextView(this);
+        statusView.setText(adbConnected ? "⚡ ADB" : shizukuAvailable ? "⚡ Shizuku" : "○ Limited");
+        statusView.setTextColor(adbConnected || shizukuAvailable ? ACCENT : Color.GRAY);
+        statusView.setTextSize(11);
+        statusView.setBackgroundColor(BTN);
+        statusView.setPadding(14, 6, 14, 6);
+        header.addView(statusView);
 
         main.addView(header);
 
@@ -158,7 +162,7 @@ public class MainActivity extends Activity {
         main.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         outputView = new TextView(this);
-        outputView.setText("emder.lol ready — connect Shizuku then scan apps");
+        outputView.setText("emder.lol ready — go to Settings to connect ADB");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
@@ -177,6 +181,25 @@ public class MainActivity extends Activity {
         Shizuku.removeRequestPermissionResultListener(permissionResultListener);
     }
 
+    private void extractADB() {
+        try {
+            File adbFile = new File(getFilesDir(), "adb");
+            if (!adbFile.exists()) {
+                InputStream in = getAssets().open("adb");
+                FileOutputStream out = new FileOutputStream(adbFile);
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
+                in.close();
+                out.close();
+                adbFile.setExecutable(true);
+            }
+            adbBinaryPath = adbFile.getAbsolutePath();
+        } catch (Exception e) {
+            adbBinaryPath = null;
+        }
+    }
+
     private void checkShizuku() {
         try {
             shizukuAvailable = Shizuku.pingBinder() &&
@@ -189,12 +212,12 @@ public class MainActivity extends Activity {
     private void requestShizuku() {
         try {
             if (!Shizuku.pingBinder()) {
-                show("Shizuku is not running.\nOpen the Shizuku app and start the service first.");
+                show("Shizuku not running.\nOpen Shizuku app and start the service first.");
                 return;
             }
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 shizukuAvailable = true;
-                show("✓ Shizuku already connected!\nFull access enabled.\n\nNow tap Scan All Apps in the Games tab.");
+                show("✓ Shizuku already connected!");
             } else if (Shizuku.shouldShowRequestPermissionRationale()) {
                 show("Go to Shizuku app and manually grant permission to emder.lol");
             } else {
@@ -205,9 +228,49 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String runCmd(String cmd) {
+    private void pairADB(String port, String code) {
+        new Thread(() -> {
+            show("Pairing with ADB...");
+            String result = runRaw(adbBinaryPath + " pair localhost:" + port + " " + code);
+            if (result.contains("Successfully") || result.contains("success")) {
+                show("✓ Paired!\nNow connecting...");
+                String connectResult = runRaw(adbBinaryPath + " connect localhost:5555");
+                if (connectResult.contains("connected")) {
+                    adbConnected = true;
+                    show("✓ ADB connected! Full access enabled.\nNow tap Scan All Apps in Games tab!");
+                } else {
+                    show("Paired but connect failed:\n" + connectResult +
+                        "\nTry running: adb tcpip 5555 from your PC first");
+                }
+            } else {
+                show("Pairing failed:\n" + result);
+            }
+        }).start();
+    }
+
+    private String runRaw(String cmd) {
         try {
             Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+            BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = out.readLine()) != null) sb.append(line).append("\n");
+            while ((line = err.readLine()) != null) sb.append(line).append("\n");
+            p.waitFor();
+            return sb.toString().trim();
+        } catch (Exception e) { return "Error: " + e.getMessage(); }
+    }
+
+    private String runCmd(String cmd) {
+        try {
+            String fullCmd;
+            if (adbConnected && adbBinaryPath != null) {
+                fullCmd = adbBinaryPath + " shell " + cmd;
+            } else {
+                fullCmd = cmd;
+            }
+            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", fullCmd});
             BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
             BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
             StringBuilder sb = new StringBuilder();
@@ -230,9 +293,10 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> outputView.setText(msg));
     }
 
+    // ── Games Tab ─────────────────────────────────────────────────────────
     private void buildGamesTab(LinearLayout c) {
         addSectionLabel(c, "All Apps");
-        addSubLabel(c, "Connect Shizuku first, then scan to see all games");
+        addSubLabel(c, "Connect ADB in Settings first for full game list");
 
         selectedGameLabel = new TextView(this);
         selectedGameLabel.setText("No app selected");
@@ -251,36 +315,37 @@ public class MainActivity extends Activity {
 
     private void scanGames() {
         gamesListContainer.removeAllViews();
-        show("Scanning" + (shizukuAvailable ? " (elevated)" : " (limited)") + "...");
+        show("Scanning" + (adbConnected ? " via ADB (full access)" : " (limited)") + "...");
 
         new Thread(() -> {
             List<String[]> apps = new ArrayList<>();
 
-            String pmOutput = runCmd("pm list packages -f 2>&1");
-            if (pmOutput != null && pmOutput.contains("=")) {
-                for (String line : pmOutput.split("\n")) {
-                    try {
-                        String pkgName = line.contains("=") ?
-                            line.substring(line.lastIndexOf("=") + 1).trim() :
-                            line.replace("package:", "").trim();
-                        if (pkgName.isEmpty()) continue;
-                        String label;
+            if (adbConnected && adbBinaryPath != null) {
+                // Use ADB for full package list including VR games
+                String output = runRaw(adbBinaryPath + " shell pm list packages -f 2>&1");
+                if (output != null && output.contains("=")) {
+                    for (String line : output.split("\n")) {
                         try {
-                            PackageInfo info = getPackageManager().getPackageInfo(pkgName, 0);
-                            label = (String) getPackageManager().getApplicationLabel(info.applicationInfo);
-                        } catch (Exception e) {
-                            label = pkgName;
-                        }
-                        apps.add(new String[]{pkgName, label});
-                    } catch (Exception e) { /* skip */ }
+                            String pkgName = line.contains("=") ?
+                                line.substring(line.lastIndexOf("=") + 1).trim() :
+                                line.replace("package:", "").trim();
+                            if (pkgName.isEmpty()) continue;
+                            String label;
+                            try {
+                                PackageInfo info = getPackageManager().getPackageInfo(pkgName, 0);
+                                label = (String) getPackageManager().getApplicationLabel(info.applicationInfo);
+                            } catch (Exception e) {
+                                label = pkgName;
+                            }
+                            apps.add(new String[]{pkgName, label});
+                        } catch (Exception e) { /* skip */ }
+                    }
                 }
-            }
-
-            // Fallback
-            if (apps.isEmpty()) {
+            } else {
+                // Fallback to PackageManager
                 try {
-                    List<PackageInfo> pmApps = getPackageManager().getInstalledPackages(PackageManager.GET_META_DATA);
-                    for (PackageInfo pkg : pmApps) {
+                    List<PackageInfo> packages = getPackageManager().getInstalledPackages(PackageManager.GET_META_DATA);
+                    for (PackageInfo pkg : packages) {
                         String label;
                         try {
                             label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
@@ -295,7 +360,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 gamesListContainer.removeAllViews();
                 if (apps.isEmpty()) {
-                    show("No apps found. Connect Shizuku first!");
+                    show("No apps found. Connect ADB in Settings first!");
                     return;
                 }
                 show("Found " + apps.size() + " apps — tap one to select");
@@ -321,9 +386,10 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Game Mods");
-        addSubLabel(c, "Select an app first. Requires Shizuku for full effect.");
+        addSubLabel(c, "Select an app first. Connect ADB for full effect.");
 
         String[] mods = {
             "God Mode", "Fly", "No Clip", "Speed Boost",
@@ -345,18 +411,14 @@ public class MainActivity extends Activity {
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                if (shizukuAvailable) {
-                    String propName = "mod." + name.toLowerCase().replace(" ", "_");
-                    runAndShow("setprop " + propName + " " + (states[idx] ? "1" : "0"));
-                } else {
-                    show(name + (states[idx] ? " ON" : " OFF") + " for " + selectedAppLabel +
-                        "\n⚠ Connect Shizuku in Settings for this to work!");
-                }
+                String propName = "mod." + name.toLowerCase().replace(" ", "_");
+                runAndShow("setprop " + propName + " " + (states[idx] ? "1" : "0"));
             });
             c.addView(btn);
         }
     }
 
+    // ── System Tab ────────────────────────────────────────────────────────
     private void buildSystemTab(LinearLayout c) {
         addSectionLabel(c, "Quest System");
 
@@ -378,7 +440,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
-        addSubLabel(c, "Quest Commands (needs Shizuku)");
+        addSubLabel(c, "Quest Performance (needs ADB)");
         addBtn(c, "Set 120hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 120"));
         addBtn(c, "Set 90hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 90"));
         addBtn(c, "Set 72hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 72"));
@@ -397,6 +459,7 @@ public class MainActivity extends Activity {
         addBtn(c, "IP Address", BTN, Color.WHITE, v -> runAndShow("ip addr show wlan0 | grep 'inet '"));
     }
 
+    // ── Patcher Tab ───────────────────────────────────────────────────────
     private void buildPatcherTab(LinearLayout c) {
         addSectionLabel(c, "APK Patcher");
         addSubLabel(c, "Select an app in Games tab first");
@@ -413,7 +476,7 @@ public class MainActivity extends Activity {
                         "\nSize: " + new File(info.applicationInfo.sourceDir).length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
                     String path = runCmd("pm path " + selectedPackage + " 2>&1");
-                    show("Name: " + selectedAppLabel + "\nPackage: " + selectedPackage + "\n" + path);
+                    show("Package: " + selectedPackage + "\n" + path);
                 }
             }).start();
         });
@@ -422,7 +485,7 @@ public class MainActivity extends Activity {
             if (selectedPackage == null) { show("Select an app first!"); return; }
             new Thread(() -> {
                 try {
-                    ApplicationInfo appInfo = getPackageManager().getApplicationInfo(selectedPackage, 0);
+                    android.content.pm.ApplicationInfo appInfo = getPackageManager().getApplicationInfo(selectedPackage, 0);
                     show("Backing up " + selectedAppLabel + "...");
                     File src = new File(appInfo.sourceDir);
                     File dst = new File("/sdcard/Download/" + selectedPackage + "_backup.apk");
@@ -430,12 +493,14 @@ public class MainActivity extends Activity {
                     show("✓ Saved!\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
                         dst.length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    String path = runCmd("pm path " + selectedPackage + " 2>&1 | cut -d: -f2 | tr -d ' '");
-                    if (path.startsWith("/")) {
+                    // Try via ADB
+                    String path = runCmd("pm path " + selectedPackage + " 2>&1");
+                    if (path.contains("/")) {
+                        path = path.replace("package:", "").trim();
                         String result = runCmd("cp " + path + " /sdcard/Download/" + selectedPackage + "_backup.apk 2>&1");
-                        show("✓ Backed up via shell!\n" + result);
+                        show("✓ Backed up!\n" + result);
                     } else {
-                        show("Error: " + e.getMessage());
+                        show("Error: " + e.getMessage() + "\nConnect ADB for elevated access");
                     }
                 }
             }).start();
@@ -466,9 +531,10 @@ public class MainActivity extends Activity {
         out.close();
     }
 
+    // ── ADB Tab ───────────────────────────────────────────────────────────
     private void buildADBTab(LinearLayout c) {
         addSectionLabel(c, "Command Runner");
-        addSubLabel(c, "Elevated with Shizuku when connected");
+        addSubLabel(c, adbConnected ? "Running via ADB (full access)" : "Limited access — connect ADB in Settings");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -490,11 +556,9 @@ public class MainActivity extends Activity {
             {"Quest Model", "getprop ro.product.model"},
             {"Android Version", "getprop ro.build.version.release"},
             {"Battery", "cat /sys/class/power_supply/battery/capacity"},
-            {"Uptime", "uptime"},
             {"Storage", "df /sdcard | tail -1"},
             {"Memory", "cat /proc/meminfo | grep MemAvailable"},
             {"List ALL packages", "pm list packages -f 2>&1 | head -50"},
-            {"List user packages", "pm list packages -3 -f 2>&1"},
             {"Find Yeeps", "pm list packages 2>&1 | grep -i yeep"},
             {"Find Gorilla Tag", "pm list packages 2>&1 | grep -i gorilla"},
         };
@@ -505,16 +569,99 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ── Settings Tab ──────────────────────────────────────────────────────
     private void buildSettingsTab(LinearLayout c) {
         addSectionLabel(c, "Settings");
 
-        addSubLabel(c, "Shizuku — Required for game scanning");
+        addSubLabel(c, "ADB Setup — Required for full game access");
+
+        TextView adbInfo = new TextView(this);
+        adbInfo.setText("ADB Status: " + (adbConnected ? "✓ Connected" : "✗ Not connected"));
+        adbInfo.setTextColor(adbConnected ? ACCENT : Color.GRAY);
+        adbInfo.setTextSize(12);
+        adbInfo.setPadding(0, 8, 0, 8);
+        c.addView(adbInfo);
+
+        addBtn(c, "📖 How to Setup ADB", BTN, Color.WHITE, v ->
+            show("To connect ADB:\n\n" +
+                "1. Go to Quest Settings → Developer Options\n" +
+                "2. Enable Wireless Debugging\n" +
+                "3. Tap 'Pair device with pairing code'\n" +
+                "4. Note the CODE and PORT shown\n" +
+                "5. Tap 'Pair with Code' button below\n" +
+                "6. Enter the code and port\n\n" +
+                "Only needs to be done once!"));
+
+        addBtn(c, "⚡ Pair with Code", ACCENT, Color.BLACK, v -> {
+            // Show pairing dialog
+            LinearLayout dialogLayout = new LinearLayout(this);
+            dialogLayout.setOrientation(LinearLayout.VERTICAL);
+            dialogLayout.setPadding(40, 20, 40, 20);
+
+            EditText codeField = new EditText(this);
+            codeField.setHint("Pairing code (6 digits)");
+            codeField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+            codeField.setTextColor(Color.BLACK);
+            dialogLayout.addView(codeField);
+
+            EditText portField = new EditText(this);
+            portField.setHint("Pairing port (5+ digits)");
+            portField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+            portField.setTextColor(Color.BLACK);
+            dialogLayout.addView(portField);
+
+            new AlertDialog.Builder(this)
+                .setTitle("ADB Pairing")
+                .setView(dialogLayout)
+                .setPositiveButton("Pair", (dialog, which) -> {
+                    String code = codeField.getText().toString().trim();
+                    String port = portField.getText().toString().trim();
+                    if (!code.isEmpty() && !port.isEmpty()) {
+                        pairADB(port, code);
+                    } else {
+                        show("Enter both code and port!");
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        });
+
+        addBtn(c, "🔌 Connect ADB (port 5555)", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                if (adbBinaryPath == null) {
+                    show("ADB binary not found. Reinstall the app.");
+                    return;
+                }
+                show("Connecting to localhost:5555...");
+                String result = runRaw(adbBinaryPath + " connect localhost:5555");
+                if (result.contains("connected")) {
+                    adbConnected = true;
+                    show("✓ ADB connected!\nFull access enabled.\nScan apps in Games tab!");
+                } else {
+                    show("Connection failed:\n" + result +
+                        "\nTry pairing first with the Pair button above.");
+                }
+            }).start();
+        });
+
+        addBtn(c, "Check ADB Status", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                if (adbBinaryPath == null) {
+                    show("ADB binary not available");
+                    return;
+                }
+                String result = runRaw(adbBinaryPath + " devices");
+                show("ADB devices:\n" + result);
+            }).start();
+        });
+
+        addSubLabel(c, "Shizuku (alternative)");
         addBtn(c, "⚡ Connect Shizuku", ACCENT, Color.BLACK, v -> requestShizuku());
         addBtn(c, "Check Shizuku Status", BTN, Color.WHITE, v -> {
             checkShizuku();
             show(shizukuAvailable ?
-                "✓ Shizuku connected!\nGame scanning and mods enabled." :
-                "✗ Shizuku not connected.\n\n1. Open Shizuku app\n2. Start the service\n3. Tap Connect Shizuku above\n4. Grant permission when prompted");
+                "✓ Shizuku connected!" :
+                "✗ Shizuku not connected.\nOpen Shizuku app and start the service.");
         });
 
         addSubLabel(c, "Theme");
@@ -541,6 +688,7 @@ public class MainActivity extends Activity {
             show("emder.lol\nUniversal Meta Quest Mod Menu\nVersion 1.0"));
     }
 
+    // ── UI Helpers ────────────────────────────────────────────────────────
     private void addSectionLabel(LinearLayout c, String text) {
         TextView lbl = new TextView(this);
         lbl.setText(text);
