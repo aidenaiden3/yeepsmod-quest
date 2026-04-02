@@ -31,7 +31,9 @@ jobs:
       - name: Download ADB binary for ARM64
         run: |
           mkdir -p app/src/main/assets
-          wget -q https://github.com/rendiix/termux-adb/releases/download/v1.0.3/adb-arm64-v8a -O app/src/main/assets/adb
+          curl -L "https://github.com/MoralCode/adb-binaries/raw/main/adb/arm64-v8a/adb" -o app/src/main/assets/adb 2>&1 || \
+          curl -L "https://github.com/rendiix/termux-adb/releases/latest/download/adb-arm64-v8a" -o app/src/main/assets/adb 2>&1
+          ls -la app/src/main/assets/
 
       - name: Build APK
         run: ./gradlew assembleRelease
