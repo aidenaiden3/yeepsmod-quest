@@ -3,6 +3,7 @@ package com.yeepsmod.quest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -77,7 +78,6 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // Header
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setBackgroundColor(Color.parseColor("#111111"));
@@ -184,7 +184,7 @@ public class MainActivity extends Activity {
     private void extractADB() {
         try {
             File adbFile = new File(getFilesDir(), "adb");
-            if (!adbFile.exists()) {
+            if (!adbFile.exists() || adbFile.length() < 1000) {
                 InputStream in = getAssets().open("adb");
                 FileOutputStream out = new FileOutputStream(adbFile);
                 byte[] buf = new byte[8192];
@@ -192,8 +192,11 @@ public class MainActivity extends Activity {
                 while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
                 in.close();
                 out.close();
-                adbFile.setExecutable(true);
             }
+            // Force chmod via shell
+            Process chmod = Runtime.getRuntime().exec(
+                new String[]{"sh", "-c", "chmod 777 " + adbFile.getAbsolutePath()});
+            chmod.waitFor();
             adbBinaryPath = adbFile.getAbsolutePath();
         } catch (Exception e) {
             adbBinaryPath = null;
@@ -233,14 +236,13 @@ public class MainActivity extends Activity {
             show("Pairing with ADB...");
             String result = runRaw(adbBinaryPath + " pair localhost:" + port + " " + code);
             if (result.contains("Successfully") || result.contains("success")) {
-                show("✓ Paired!\nNow connecting...");
+                show("✓ Paired! Connecting...");
                 String connectResult = runRaw(adbBinaryPath + " connect localhost:5555");
                 if (connectResult.contains("connected")) {
                     adbConnected = true;
-                    show("✓ ADB connected! Full access enabled.\nNow tap Scan All Apps in Games tab!");
+                    show("✓ ADB connected! Full access enabled.\nScan apps in Games tab!");
                 } else {
-                    show("Paired but connect failed:\n" + connectResult +
-                        "\nTry running: adb tcpip 5555 from your PC first");
+                    show("Paired but connect failed:\n" + connectResult);
                 }
             } else {
                 show("Pairing failed:\n" + result);
@@ -293,7 +295,6 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> outputView.setText(msg));
     }
 
-    // ── Games Tab ─────────────────────────────────────────────────────────
     private void buildGamesTab(LinearLayout c) {
         addSectionLabel(c, "All Apps");
         addSubLabel(c, "Connect ADB in Settings first for full game list");
@@ -315,13 +316,12 @@ public class MainActivity extends Activity {
 
     private void scanGames() {
         gamesListContainer.removeAllViews();
-        show("Scanning" + (adbConnected ? " via ADB (full access)" : " (limited)") + "...");
+        show("Scanning" + (adbConnected ? " via ADB" : " (limited)") + "...");
 
         new Thread(() -> {
             List<String[]> apps = new ArrayList<>();
 
             if (adbConnected && adbBinaryPath != null) {
-                // Use ADB for full package list including VR games
                 String output = runRaw(adbBinaryPath + " shell pm list packages -f 2>&1");
                 if (output != null && output.contains("=")) {
                     for (String line : output.split("\n")) {
@@ -342,7 +342,6 @@ public class MainActivity extends Activity {
                     }
                 }
             } else {
-                // Fallback to PackageManager
                 try {
                     List<PackageInfo> packages = getPackageManager().getInstalledPackages(PackageManager.GET_META_DATA);
                     for (PackageInfo pkg : packages) {
@@ -386,7 +385,6 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    // ── Mods Tab ──────────────────────────────────────────────────────────
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Game Mods");
         addSubLabel(c, "Select an app first. Connect ADB for full effect.");
@@ -418,7 +416,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ── System Tab ────────────────────────────────────────────────────────
     private void buildSystemTab(LinearLayout c) {
         addSectionLabel(c, "Quest System");
 
@@ -459,7 +456,6 @@ public class MainActivity extends Activity {
         addBtn(c, "IP Address", BTN, Color.WHITE, v -> runAndShow("ip addr show wlan0 | grep 'inet '"));
     }
 
-    // ── Patcher Tab ───────────────────────────────────────────────────────
     private void buildPatcherTab(LinearLayout c) {
         addSectionLabel(c, "APK Patcher");
         addSubLabel(c, "Select an app in Games tab first");
@@ -485,7 +481,7 @@ public class MainActivity extends Activity {
             if (selectedPackage == null) { show("Select an app first!"); return; }
             new Thread(() -> {
                 try {
-                    android.content.pm.ApplicationInfo appInfo = getPackageManager().getApplicationInfo(selectedPackage, 0);
+                    ApplicationInfo appInfo = getPackageManager().getApplicationInfo(selectedPackage, 0);
                     show("Backing up " + selectedAppLabel + "...");
                     File src = new File(appInfo.sourceDir);
                     File dst = new File("/sdcard/Download/" + selectedPackage + "_backup.apk");
@@ -493,7 +489,6 @@ public class MainActivity extends Activity {
                     show("✓ Saved!\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
                         dst.length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    // Try via ADB
                     String path = runCmd("pm path " + selectedPackage + " 2>&1");
                     if (path.contains("/")) {
                         path = path.replace("package:", "").trim();
@@ -531,10 +526,9 @@ public class MainActivity extends Activity {
         out.close();
     }
 
-    // ── ADB Tab ───────────────────────────────────────────────────────────
     private void buildADBTab(LinearLayout c) {
         addSectionLabel(c, "Command Runner");
-        addSubLabel(c, adbConnected ? "Running via ADB (full access)" : "Limited access — connect ADB in Settings");
+        addSubLabel(c, adbConnected ? "Running via ADB (full access)" : "Limited — connect ADB in Settings");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -561,6 +555,7 @@ public class MainActivity extends Activity {
             {"List ALL packages", "pm list packages -f 2>&1 | head -50"},
             {"Find Yeeps", "pm list packages 2>&1 | grep -i yeep"},
             {"Find Gorilla Tag", "pm list packages 2>&1 | grep -i gorilla"},
+            {"Check ADB binary", "/data/data/com.yeepsmod.quest/files/adb version 2>&1"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -569,14 +564,14 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ── Settings Tab ──────────────────────────────────────────────────────
     private void buildSettingsTab(LinearLayout c) {
         addSectionLabel(c, "Settings");
 
         addSubLabel(c, "ADB Setup — Required for full game access");
 
         TextView adbInfo = new TextView(this);
-        adbInfo.setText("ADB Status: " + (adbConnected ? "✓ Connected" : "✗ Not connected"));
+        adbInfo.setText("ADB: " + (adbConnected ? "✓ Connected" : "✗ Not connected") +
+            " | Binary: " + (adbBinaryPath != null ? "✓ Ready" : "✗ Missing"));
         adbInfo.setTextColor(adbConnected ? ACCENT : Color.GRAY);
         adbInfo.setTextSize(12);
         adbInfo.setPadding(0, 8, 0, 8);
@@ -584,16 +579,19 @@ public class MainActivity extends Activity {
 
         addBtn(c, "📖 How to Setup ADB", BTN, Color.WHITE, v ->
             show("To connect ADB:\n\n" +
-                "1. Go to Quest Settings → Developer Options\n" +
+                "1. Quest Settings → Developer Options\n" +
                 "2. Enable Wireless Debugging\n" +
                 "3. Tap 'Pair device with pairing code'\n" +
                 "4. Note the CODE and PORT shown\n" +
-                "5. Tap 'Pair with Code' button below\n" +
+                "5. Tap 'Pair with Code' below\n" +
                 "6. Enter the code and port\n\n" +
                 "Only needs to be done once!"));
 
         addBtn(c, "⚡ Pair with Code", ACCENT, Color.BLACK, v -> {
-            // Show pairing dialog
+            if (adbBinaryPath == null) {
+                show("ADB binary not found. Reinstall the app.");
+                return;
+            }
             LinearLayout dialogLayout = new LinearLayout(this);
             dialogLayout.setOrientation(LinearLayout.VERTICAL);
             dialogLayout.setPadding(40, 20, 40, 20);
@@ -605,7 +603,7 @@ public class MainActivity extends Activity {
             dialogLayout.addView(codeField);
 
             EditText portField = new EditText(this);
-            portField.setHint("Pairing port (5+ digits)");
+            portField.setHint("Pairing port");
             portField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
             portField.setTextColor(Color.BLACK);
             dialogLayout.addView(portField);
@@ -627,11 +625,11 @@ public class MainActivity extends Activity {
         });
 
         addBtn(c, "🔌 Connect ADB (port 5555)", BTN, Color.WHITE, v -> {
+            if (adbBinaryPath == null) {
+                show("ADB binary not found. Reinstall the app.");
+                return;
+            }
             new Thread(() -> {
-                if (adbBinaryPath == null) {
-                    show("ADB binary not found. Reinstall the app.");
-                    return;
-                }
                 show("Connecting to localhost:5555...");
                 String result = runRaw(adbBinaryPath + " connect localhost:5555");
                 if (result.contains("connected")) {
@@ -639,18 +637,30 @@ public class MainActivity extends Activity {
                     show("✓ ADB connected!\nFull access enabled.\nScan apps in Games tab!");
                 } else {
                     show("Connection failed:\n" + result +
-                        "\nTry pairing first with the Pair button above.");
+                        "\nTry pairing first.");
                 }
             }).start();
         });
 
-        addBtn(c, "Check ADB Status", BTN, Color.WHITE, v -> {
+        addBtn(c, "🔍 Check ADB Binary", BTN, Color.WHITE, v -> {
+            new Thread(() -> {
+                if (adbBinaryPath == null) {
+                    show("ADB binary path is null");
+                    return;
+                }
+                String result = runRaw(adbBinaryPath + " version 2>&1");
+                show("ADB binary: " + adbBinaryPath +
+                    "\nVersion: " + result);
+            }).start();
+        });
+
+        addBtn(c, "Check ADB Devices", BTN, Color.WHITE, v -> {
             new Thread(() -> {
                 if (adbBinaryPath == null) {
                     show("ADB binary not available");
                     return;
                 }
-                String result = runRaw(adbBinaryPath + " devices");
+                String result = runRaw(adbBinaryPath + " devices 2>&1");
                 show("ADB devices:\n" + result);
             }).start();
         });
@@ -688,7 +698,6 @@ public class MainActivity extends Activity {
             show("emder.lol\nUniversal Meta Quest Mod Menu\nVersion 1.0"));
     }
 
-    // ── UI Helpers ────────────────────────────────────────────────────────
     private void addSectionLabel(LinearLayout c, String text) {
         TextView lbl = new TextView(this);
         lbl.setText(text);
