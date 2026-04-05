@@ -1,28 +1,17 @@
-apply plugin: 'com.android.application'
-
-android {
-    compileSdk 33
-    namespace 'com.yeepsmod.quest'
-    defaultConfig {
-        applicationId "com.yeepsmod.quest"
-        minSdk 26
-        targetSdk 33
-        versionCode 1
-        versionName "1.0"
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-    buildTypes {
-        release {
-            minifyEnabled false
-        }
-    }
-    packagingOptions {
-        exclude 'META-INF/INDEX.LIST'
-        exclude 'META-INF/io.netty.versions.properties'
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
     }
 }
 
-dependencies {
-    implementation 'dev.rikka.shizuku:api:13.1.5'
-    implementation 'dev.rikka.shizuku:provider:13.1.5'
-    implementation 'com.github.mobile-dev-inc:dadb:1.2.7'
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
 }
