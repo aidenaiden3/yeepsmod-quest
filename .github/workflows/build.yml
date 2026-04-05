@@ -17,26 +17,66 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v2
 
-      - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: '8.1'
-
-      - name: Generate wrapper
-        run: gradle wrapper --gradle-version 8.1
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-        
-      - name: Download ADB binary for ARM64
+      - name: Install apktool
         run: |
-          mkdir -p app/src/main/assets
-          curl -L "https://github.com/MoralCode/adb-binaries/raw/main/adb/arm64-v8a/adb" -o app/src/main/assets/adb 2>&1 || \
-          curl -L "https://github.com/rendiix/termux-adb/releases/latest/download/adb-arm64-v8a" -o app/src/main/assets/adb 2>&1
-          ls -la app/src/main/assets/
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
+          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
+          chmod +x /usr/local/bin/apktool
 
-      - name: Build APK
-        run: ./gradlew assembleRelease
+      - name: Download Yeeps APK
+        run: |
+          pip install gdown
+          gdown 1fu7rvU2bCtPDvwoDaUXHN9C6j813P_Im -O yeeps.apk
+          ls -lh yeeps.apk
+
+      - name: Decompile Yeeps APK
+        run: |
+          apktool d yeeps.apk -o yeeps_decoded --force
+          echo "Decompiled successfully"
+          ls yeeps_decoded/
+
+      - name: Inject mod smali
+        run: |
+          mkdir -p yeeps_decoded/smali/com/yeepsmod
+          cat > yeeps_decoded/smali/com/yeepsmod/YeepsMod.smali << 'EOF'
+          .class public Lcom/yeepsmod/YeepsMod;
+          .super Ljava/lang/Object;
+
+          .field public static customName:Ljava/lang/String;
+          .field public static modEnabled:Z
+
+          .method public static constructor <clinit>()V
+              .registers 2
+              const-string v0, "YeepsMod"
+              sput-object v0, Lcom/yeepsmod/YeepsMod;->customName:Ljava/lang/String;
+              const/4 v0, 0x1
+              sput-boolean v0, Lcom/yeepsmod/YeepsMod;->modEnabled:Z
+              return-void
+          .end method
+
+          .method public static getCustomName()Ljava/lang/String;
+              .registers 1
+              sget-object v0, Lcom/yeepsmod/YeepsMod;->customName:Ljava/lang/String;
+              return-object v0
+          .end method
+          EOF
+
+      - name: Patch AndroidManifest
+        run: |
+          python3 -c "
+          with open('yeeps_decoded/AndroidManifest.xml', 'r') as f:
+              content = f.read()
+          print('Manifest loaded, length:', len(content))
+          with open('yeeps_decoded/AndroidManifest.xml', 'w') as f:
+              f.write(content)
+          print('Done')
+          "
+
+      - name: Recompile Yeeps APK
+        run: |
+          apktool b yeeps_decoded -o yeeps_modded_unsigned.apk
+          echo "Recompiled successfully"
+          ls -lh yeeps_modded_unsigned.apk
 
       - name: Generate keystore
         run: |
@@ -47,7 +87,7 @@ jobs:
             -keypass yeepsmod123 \
             -dname "CN=YeepsMod, OU=Dev, O=YeepsMod, L=US, S=US, C=US"
 
-      - name: Sign APK
+      - name: Sign modded APK
         run: |
           BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
           $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
@@ -55,11 +95,38 @@ jobs:
             --ks-pass pass:yeepsmod123 \
             --key-pass pass:yeepsmod123 \
             --ks-key-alias yeepsmod \
-            --out YeepsMod-signed.apk \
+            --out yeeps_modded.apk \
+            yeeps_modded_unsigned.apk
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: '8.1'
+
+      - name: Generate wrapper
+        run: gradle wrapper --gradle-version 8.1
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build emder.lol APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign emder.lol APK
+        run: |
+          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
+            --ks keystore.jks \
+            --ks-pass pass:yeepsmod123 \
+            --key-pass pass:yeepsmod123 \
+            --ks-key-alias yeepsmod \
+            --out emder-signed.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
 
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: YeepsMod-Quest
-          path: YeepsMod-signed.apk
+          name: YeepsMod-APKs
+          path: |
+            yeeps_modded.apk
+            emder-signed.apk
