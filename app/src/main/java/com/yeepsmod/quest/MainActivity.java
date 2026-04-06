@@ -66,7 +66,6 @@ public class MainActivity extends Activity {
 
         Shizuku.addRequestPermissionResultListener(permissionResultListener);
         checkShizuku();
-        extractADB();
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -93,8 +92,9 @@ public class MainActivity extends Activity {
         header.addView(title);
 
         TextView statusView = new TextView(this);
-        statusView.setText(adbConnected ? "⚡ ADB" : shizukuAvailable ? "⚡ Shizuku" : "○ Limited");
-        statusView.setTextColor(adbConnected || shizukuAvailable ? ACCENT : Color.GRAY);
+        statusView.setText(ModAccessibilityService.instance != null ? "⚡ Service Active" :
+            shizukuAvailable ? "⚡ Shizuku" : "○ Limited");
+        statusView.setTextColor(ModAccessibilityService.instance != null || shizukuAvailable ? ACCENT : Color.GRAY);
         statusView.setTextSize(11);
         statusView.setBackgroundColor(BTN);
         statusView.setPadding(14, 6, 14, 6);
@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
         main.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         outputView = new TextView(this);
-        outputView.setText("emder.lol ready — go to Settings to connect ADB");
+        outputView.setText("emder.lol ready — enable accessibility service in Settings");
         outputView.setTextColor(ACCENT);
         outputView.setBackgroundColor(Color.parseColor("#050505"));
         outputView.setTextSize(10);
@@ -181,26 +181,10 @@ public class MainActivity extends Activity {
         Shizuku.removeRequestPermissionResultListener(permissionResultListener);
     }
 
-    private void extractADB() {
-        try {
-            File adbFile = new File(getFilesDir(), "adb");
-            if (!adbFile.exists() || adbFile.length() < 1000) {
-                InputStream in = getAssets().open("adb");
-                FileOutputStream out = new FileOutputStream(adbFile);
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
-                in.close();
-                out.close();
-            }
-            // Force chmod via shell
-            Process chmod = Runtime.getRuntime().exec(
-                new String[]{"sh", "-c", "chmod 777 " + adbFile.getAbsolutePath()});
-            chmod.waitFor();
-            adbBinaryPath = adbFile.getAbsolutePath();
-        } catch (Exception e) {
-            adbBinaryPath = null;
-        }
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Refresh status when coming back to app
     }
 
     private void checkShizuku() {
@@ -231,48 +215,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void pairADB(String port, String code) {
-        new Thread(() -> {
-            show("Pairing with ADB...");
-            String result = runRaw(adbBinaryPath + " pair localhost:" + port + " " + code);
-            if (result.contains("Successfully") || result.contains("success")) {
-                show("✓ Paired! Connecting...");
-                String connectResult = runRaw(adbBinaryPath + " connect localhost:5555");
-                if (connectResult.contains("connected")) {
-                    adbConnected = true;
-                    show("✓ ADB connected! Full access enabled.\nScan apps in Games tab!");
-                } else {
-                    show("Paired but connect failed:\n" + connectResult);
-                }
-            } else {
-                show("Pairing failed:\n" + result);
-            }
-        }).start();
-    }
-
-    private String runRaw(String cmd) {
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
-            BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = out.readLine()) != null) sb.append(line).append("\n");
-            while ((line = err.readLine()) != null) sb.append(line).append("\n");
-            p.waitFor();
-            return sb.toString().trim();
-        } catch (Exception e) { return "Error: " + e.getMessage(); }
-    }
-
     private String runCmd(String cmd) {
         try {
-            String fullCmd;
-            if (adbConnected && adbBinaryPath != null) {
-                fullCmd = adbBinaryPath + " shell " + cmd;
-            } else {
-                fullCmd = cmd;
-            }
-            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", fullCmd});
+            Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
             BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()));
             BufferedReader err = new BufferedReader(new InputStreamReader(p.getErrorStream()));
             StringBuilder sb = new StringBuilder();
@@ -297,7 +242,7 @@ public class MainActivity extends Activity {
 
     private void buildGamesTab(LinearLayout c) {
         addSectionLabel(c, "All Apps");
-        addSubLabel(c, "Connect ADB in Settings first for full game list");
+        addSubLabel(c, "Tap any app to select it as the mod target");
 
         selectedGameLabel = new TextView(this);
         selectedGameLabel.setText("No app selected");
@@ -316,50 +261,27 @@ public class MainActivity extends Activity {
 
     private void scanGames() {
         gamesListContainer.removeAllViews();
-        show("Scanning" + (adbConnected ? " via ADB" : " (limited)") + "...");
+        show("Scanning...");
 
         new Thread(() -> {
             List<String[]> apps = new ArrayList<>();
-
-            if (adbConnected && adbBinaryPath != null) {
-                String output = runRaw(adbBinaryPath + " shell pm list packages -f 2>&1");
-                if (output != null && output.contains("=")) {
-                    for (String line : output.split("\n")) {
-                        try {
-                            String pkgName = line.contains("=") ?
-                                line.substring(line.lastIndexOf("=") + 1).trim() :
-                                line.replace("package:", "").trim();
-                            if (pkgName.isEmpty()) continue;
-                            String label;
-                            try {
-                                PackageInfo info = getPackageManager().getPackageInfo(pkgName, 0);
-                                label = (String) getPackageManager().getApplicationLabel(info.applicationInfo);
-                            } catch (Exception e) {
-                                label = pkgName;
-                            }
-                            apps.add(new String[]{pkgName, label});
-                        } catch (Exception e) { /* skip */ }
+            try {
+                List<PackageInfo> packages = getPackageManager().getInstalledPackages(PackageManager.GET_META_DATA);
+                for (PackageInfo pkg : packages) {
+                    String label;
+                    try {
+                        label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
+                    } catch (Exception e) {
+                        label = pkg.packageName;
                     }
+                    apps.add(new String[]{pkg.packageName, label});
                 }
-            } else {
-                try {
-                    List<PackageInfo> packages = getPackageManager().getInstalledPackages(PackageManager.GET_META_DATA);
-                    for (PackageInfo pkg : packages) {
-                        String label;
-                        try {
-                            label = (String) getPackageManager().getApplicationLabel(pkg.applicationInfo);
-                        } catch (Exception e) {
-                            label = pkg.packageName;
-                        }
-                        apps.add(new String[]{pkg.packageName, label});
-                    }
-                } catch (Exception e) { /* ignore */ }
-            }
+            } catch (Exception e) { /* ignore */ }
 
             runOnUiThread(() -> {
                 gamesListContainer.removeAllViews();
                 if (apps.isEmpty()) {
-                    show("No apps found. Connect ADB in Settings first!");
+                    show("No apps found.");
                     return;
                 }
                 show("Found " + apps.size() + " apps — tap one to select");
@@ -387,7 +309,65 @@ public class MainActivity extends Activity {
 
     private void buildModsTab(LinearLayout c) {
         addSectionLabel(c, "Game Mods");
-        addSubLabel(c, "Select an app first. Connect ADB for full effect.");
+        addSubLabel(c, "Enable accessibility service in Settings first");
+
+        TextView accStatus = new TextView(this);
+        accStatus.setText(ModAccessibilityService.instance != null ?
+            "✓ Mod Service Active" : "✗ Mod Service Not Active — go to Settings");
+        accStatus.setTextColor(ModAccessibilityService.instance != null ? ACCENT : RED);
+        accStatus.setTextSize(12);
+        accStatus.setBackgroundColor(BTN);
+        accStatus.setPadding(20, 15, 20, 15);
+        c.addView(accStatus);
+
+        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            } catch (Exception e) {
+                show("Error: " + e.getMessage());
+            }
+        });
+
+        addBtn(c, "📖 Read Screen Content", BTN, Color.WHITE, v -> {
+            String content = ModAccessibilityService.getScreenContent();
+            show("Screen:\n" + (content.length() > 500 ?
+                content.substring(0, 500) + "..." : content));
+        });
+
+        addBtn(c, "📋 Yeeps Event Log", BTN, Color.WHITE, v -> {
+            String log = ModAccessibilityService.screenLog.toString();
+            show(log.isEmpty() ? "No Yeeps events yet — open Yeeps first" :
+                log.length() > 500 ? log.substring(log.length() - 500) : log);
+        });
+
+        addBtn(c, "🔄 Clear Event Log", BTN, Color.GRAY, v -> {
+            ModAccessibilityService.screenLog = new StringBuilder();
+            show("Log cleared");
+        });
+
+        addSubLabel(c, "Gesture Controls (Yeeps must be open)");
+
+        addBtn(c, "👆 Tap Center Screen", BTN, Color.WHITE, v -> {
+            ModAccessibilityService.tap(960, 540);
+            show("Tapped center screen");
+        });
+
+        addBtn(c, "👆 Tap Top Left", BTN, Color.WHITE, v -> {
+            ModAccessibilityService.tap(100, 100);
+            show("Tapped top left");
+        });
+
+        addBtn(c, "👆 Swipe Up", BTN, Color.WHITE, v -> {
+            ModAccessibilityService.swipe(960, 700, 960, 300);
+            show("Swiped up");
+        });
+
+        addBtn(c, "👆 Swipe Down", BTN, Color.WHITE, v -> {
+            ModAccessibilityService.swipe(960, 300, 960, 700);
+            show("Swiped down");
+        });
+
+        addSubLabel(c, "System Mods (needs Shizuku/ADB)");
 
         String[] mods = {
             "God Mode", "Fly", "No Clip", "Speed Boost",
@@ -401,16 +381,11 @@ public class MainActivity extends Activity {
             final String name = mods[i];
             Button btn = makeBtn(name + ": OFF", BTN, Color.WHITE);
             btn.setOnClickListener(v -> {
-                if (selectedPackage == null) {
-                    show("⚠ Select an app in the Games tab first!");
-                    return;
-                }
                 states[idx] = !states[idx];
                 btn.setText(name + (states[idx] ? ": ON" : ": OFF"));
                 btn.setBackgroundColor(states[idx] ? Color.parseColor("#0D3D2A") : BTN);
                 btn.setTextColor(states[idx] ? ACCENT : Color.WHITE);
-                String propName = "mod." + name.toLowerCase().replace(" ", "_");
-                runAndShow("setprop " + propName + " " + (states[idx] ? "1" : "0"));
+                show(name + (states[idx] ? " ON" : " OFF"));
             });
             c.addView(btn);
         }
@@ -428,6 +403,10 @@ public class MainActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)); }
             catch (Exception e) { show("Error: " + e.getMessage()); }
         });
+        addBtn(c, "Accessibility Settings", BTN, Color.WHITE, v -> {
+            try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+            catch (Exception e) { show("Error: " + e.getMessage()); }
+        });
         addBtn(c, "Selected App Settings", BTN, Color.WHITE, v -> {
             if (selectedPackage == null) { show("Select an app first!"); return; }
             try {
@@ -437,7 +416,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) { show("Error: " + e.getMessage()); }
         });
 
-        addSubLabel(c, "Quest Performance (needs ADB)");
+        addSubLabel(c, "Quest Performance (needs Shizuku)");
         addBtn(c, "Set 120hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 120"));
         addBtn(c, "Set 90hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 90"));
         addBtn(c, "Set 72hz", BTN, Color.WHITE, v -> runAndShow("setprop debug.oculus.refreshRate 72"));
@@ -471,8 +450,7 @@ public class MainActivity extends Activity {
                         "\nAPK: " + info.applicationInfo.sourceDir +
                         "\nSize: " + new File(info.applicationInfo.sourceDir).length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    String path = runCmd("pm path " + selectedPackage + " 2>&1");
-                    show("Package: " + selectedPackage + "\n" + path);
+                    show("Error: " + e.getMessage());
                 }
             }).start();
         });
@@ -489,14 +467,7 @@ public class MainActivity extends Activity {
                     show("✓ Saved!\n/sdcard/Download/" + selectedPackage + "_backup.apk\n" +
                         dst.length() / 1024 / 1024 + " MB");
                 } catch (Exception e) {
-                    String path = runCmd("pm path " + selectedPackage + " 2>&1");
-                    if (path.contains("/")) {
-                        path = path.replace("package:", "").trim();
-                        String result = runCmd("cp " + path + " /sdcard/Download/" + selectedPackage + "_backup.apk 2>&1");
-                        show("✓ Backed up!\n" + result);
-                    } else {
-                        show("Error: " + e.getMessage() + "\nConnect ADB for elevated access");
-                    }
+                    show("Error: " + e.getMessage());
                 }
             }).start();
         });
@@ -528,7 +499,7 @@ public class MainActivity extends Activity {
 
     private void buildADBTab(LinearLayout c) {
         addSectionLabel(c, "Command Runner");
-        addSubLabel(c, adbConnected ? "Running via ADB (full access)" : "Limited — connect ADB in Settings");
+        addSubLabel(c, "Elevated with Shizuku when connected");
 
         EditText cmdField = new EditText(this);
         cmdField.setHint("Enter command...");
@@ -552,10 +523,9 @@ public class MainActivity extends Activity {
             {"Battery", "cat /sys/class/power_supply/battery/capacity"},
             {"Storage", "df /sdcard | tail -1"},
             {"Memory", "cat /proc/meminfo | grep MemAvailable"},
-            {"List ALL packages", "pm list packages -f 2>&1 | head -50"},
             {"Find Yeeps", "pm list packages 2>&1 | grep -i yeep"},
             {"Find Gorilla Tag", "pm list packages 2>&1 | grep -i gorilla"},
-            {"Check ADB binary", "/data/data/com.yeepsmod.quest/files/adb version 2>&1"},
+            {"Running processes", "ps -A | head -30"},
         };
         for (String[] q : quick) {
             Button b = makeBtn(q[0], BTN, Color.WHITE);
@@ -567,105 +537,20 @@ public class MainActivity extends Activity {
     private void buildSettingsTab(LinearLayout c) {
         addSectionLabel(c, "Settings");
 
-        addSubLabel(c, "ADB Setup — Required for full game access");
-
-        TextView adbInfo = new TextView(this);
-        adbInfo.setText("ADB: " + (adbConnected ? "✓ Connected" : "✗ Not connected") +
-            " | Binary: " + (adbBinaryPath != null ? "✓ Ready" : "✗ Missing"));
-        adbInfo.setTextColor(adbConnected ? ACCENT : Color.GRAY);
-        adbInfo.setTextSize(12);
-        adbInfo.setPadding(0, 8, 0, 8);
-        c.addView(adbInfo);
-
-        addBtn(c, "📖 How to Setup ADB", BTN, Color.WHITE, v ->
-            show("To connect ADB:\n\n" +
-                "1. Quest Settings → Developer Options\n" +
-                "2. Enable Wireless Debugging\n" +
-                "3. Tap 'Pair device with pairing code'\n" +
-                "4. Note the CODE and PORT shown\n" +
-                "5. Tap 'Pair with Code' below\n" +
-                "6. Enter the code and port\n\n" +
-                "Only needs to be done once!"));
-
-        addBtn(c, "⚡ Pair with Code", ACCENT, Color.BLACK, v -> {
-            if (adbBinaryPath == null) {
-                show("ADB binary not found. Reinstall the app.");
-                return;
+        addSubLabel(c, "Accessibility Service");
+        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            } catch (Exception e) {
+                show("Error: " + e.getMessage());
             }
-            LinearLayout dialogLayout = new LinearLayout(this);
-            dialogLayout.setOrientation(LinearLayout.VERTICAL);
-            dialogLayout.setPadding(40, 20, 40, 20);
-
-            EditText codeField = new EditText(this);
-            codeField.setHint("Pairing code (6 digits)");
-            codeField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-            codeField.setTextColor(Color.BLACK);
-            dialogLayout.addView(codeField);
-
-            EditText portField = new EditText(this);
-            portField.setHint("Pairing port");
-            portField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-            portField.setTextColor(Color.BLACK);
-            dialogLayout.addView(portField);
-
-            new AlertDialog.Builder(this)
-                .setTitle("ADB Pairing")
-                .setView(dialogLayout)
-                .setPositiveButton("Pair", (dialog, which) -> {
-                    String code = codeField.getText().toString().trim();
-                    String port = portField.getText().toString().trim();
-                    if (!code.isEmpty() && !port.isEmpty()) {
-                        pairADB(port, code);
-                    } else {
-                        show("Enter both code and port!");
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
         });
+        addBtn(c, "Service Status", BTN, Color.WHITE, v ->
+            show(ModAccessibilityService.instance != null ?
+                "✓ Mod service is running!\nReady to interact with games." :
+                "✗ Mod service not running.\nGo to Accessibility Settings and enable emder.lol"));
 
-        addBtn(c, "🔌 Connect ADB (port 5555)", BTN, Color.WHITE, v -> {
-            if (adbBinaryPath == null) {
-                show("ADB binary not found. Reinstall the app.");
-                return;
-            }
-            new Thread(() -> {
-                show("Connecting to localhost:5555...");
-                String result = runRaw(adbBinaryPath + " connect localhost:5555");
-                if (result.contains("connected")) {
-                    adbConnected = true;
-                    show("✓ ADB connected!\nFull access enabled.\nScan apps in Games tab!");
-                } else {
-                    show("Connection failed:\n" + result +
-                        "\nTry pairing first.");
-                }
-            }).start();
-        });
-
-        addBtn(c, "🔍 Check ADB Binary", BTN, Color.WHITE, v -> {
-            new Thread(() -> {
-                if (adbBinaryPath == null) {
-                    show("ADB binary path is null");
-                    return;
-                }
-                String result = runRaw(adbBinaryPath + " version 2>&1");
-                show("ADB binary: " + adbBinaryPath +
-                    "\nVersion: " + result);
-            }).start();
-        });
-
-        addBtn(c, "Check ADB Devices", BTN, Color.WHITE, v -> {
-            new Thread(() -> {
-                if (adbBinaryPath == null) {
-                    show("ADB binary not available");
-                    return;
-                }
-                String result = runRaw(adbBinaryPath + " devices 2>&1");
-                show("ADB devices:\n" + result);
-            }).start();
-        });
-
-        addSubLabel(c, "Shizuku (alternative)");
+        addSubLabel(c, "Shizuku");
         addBtn(c, "⚡ Connect Shizuku", ACCENT, Color.BLACK, v -> requestShizuku());
         addBtn(c, "Check Shizuku Status", BTN, Color.WHITE, v -> {
             checkShizuku();
