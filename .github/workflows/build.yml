@@ -35,15 +35,49 @@ jobs:
           echo "Decompiled successfully"
           ls yeeps_decoded/
           
-      - name: Find and patch integrity check
+      - name: Patch Talsec security
         run: |
-          # Search for integrity check strings in smali
-          grep -r "integrity" yeeps_decoded/smali/ -l 2>/dev/null || echo "No integrity files found"
-          grep -r "reinstall" yeeps_decoded/smali/ -l 2>/dev/null || echo "No reinstall files found"  
-          grep -r "Application integrity" yeeps_decoded/smali/ -l 2>/dev/null || echo "Not in smali"
-          grep -r "talsec" yeeps_decoded/smali/ -l 2>/dev/null || echo "No talsec in smali"
-          grep -r "freerasp" yeeps_decoded/smali/ -l 2>/dev/null || echo "No freerasp"
-          find yeeps_decoded/ -name "*.smali" | xargs grep -l "integrity\|talsec\|tamper" 2>/dev/null | head -10
+          # Disable the main Talsec class
+          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/Talsec.smali << 'EOF'
+          .class public Lcom/aheaditec/talsec_security/security/api/Talsec;
+          .super Ljava/lang/Object;
+
+          .method public static start(Landroid/app/Application;Lcom/aheaditec/talsec_security/security/api/TalsecConfig;Lcom/aheaditec/talsec_security/security/api/ThreatListener;)V
+              .registers 3
+              return-void
+          .end method
+
+          .method public static stop()V
+              .registers 1
+              return-void
+          .end method
+          EOF
+
+          # Disable TalsecBridge
+          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/TalsecBridge.smali << 'EOF'
+          .class public Lcom/aheaditec/talsec_security/security/api/TalsecBridge;
+          .super Ljava/lang/Object;
+          EOF
+
+          # Disable all talsec runner classes by making them do nothing
+          find yeeps_decoded/smali/com/aheaditec/talsec_security/security/runner/ -name "*.smali" -exec sh -c '
+            classname=$(grep "^.class" "$1" | head -1 | awk "{print \$NF}")
+            if [ ! -z "$classname" ]; then
+              echo ".class public $classname" > "$1"
+              echo ".super Ljava/lang/Object;" >> "$1"
+            fi
+          ' _ {} \;
+
+          # Disable ThreatListener
+          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/ThreatListener.smali << 'EOF'
+          .class public interface abstract Lcom/aheaditec/talsec_security/security/api/ThreatListener;
+          .super Ljava/lang/Object;
+
+          .method public abstract threatDetected(Lcom/aheaditec/talsec_security/security/api/ThreatListener$ThreatDetected;)V
+          .end method
+          EOF
+
+          echo "Talsec patched!"
 
       - name: Inject mod smali
         run: |
