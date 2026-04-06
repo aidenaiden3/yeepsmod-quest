@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">emder.lol</string>
+    <string name="accessibility_description">emder.lol mod service for Yeeps VR</string>
+</resources>
