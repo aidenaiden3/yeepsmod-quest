@@ -34,6 +34,16 @@ jobs:
           apktool d yeeps.apk -o yeeps_decoded --force
           echo "Decompiled successfully"
           ls yeeps_decoded/
+          
+      - name: Find and patch integrity check
+        run: |
+          # Search for integrity check strings in smali
+          grep -r "integrity" yeeps_decoded/smali/ -l 2>/dev/null || echo "No integrity files found"
+          grep -r "reinstall" yeeps_decoded/smali/ -l 2>/dev/null || echo "No reinstall files found"  
+          grep -r "Application integrity" yeeps_decoded/smali/ -l 2>/dev/null || echo "Not in smali"
+          grep -r "talsec" yeeps_decoded/smali/ -l 2>/dev/null || echo "No talsec in smali"
+          grep -r "freerasp" yeeps_decoded/smali/ -l 2>/dev/null || echo "No freerasp"
+          find yeeps_decoded/ -name "*.smali" | xargs grep -l "integrity\|talsec\|tamper" 2>/dev/null | head -10
 
       - name: Inject mod smali
         run: |
