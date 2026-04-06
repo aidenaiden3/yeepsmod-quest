@@ -35,49 +35,25 @@ jobs:
           echo "Decompiled successfully"
           ls yeeps_decoded/
           
-      - name: Patch Talsec security
+      - name: Remove Talsec completely
         run: |
-          # Disable the main Talsec class
-          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/Talsec.smali << 'EOF'
-          .class public Lcom/aheaditec/talsec_security/security/api/Talsec;
-          .super Ljava/lang/Object;
-
-          .method public static start(Landroid/app/Application;Lcom/aheaditec/talsec_security/security/api/TalsecConfig;Lcom/aheaditec/talsec_security/security/api/ThreatListener;)V
-              .registers 3
-              return-void
-          .end method
-
-          .method public static stop()V
-              .registers 1
-              return-void
-          .end method
-          EOF
-
-          # Disable TalsecBridge
-          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/TalsecBridge.smali << 'EOF'
-          .class public Lcom/aheaditec/talsec_security/security/api/TalsecBridge;
-          .super Ljava/lang/Object;
-          EOF
-
-          # Disable all talsec runner classes by making them do nothing
-          find yeeps_decoded/smali/com/aheaditec/talsec_security/security/runner/ -name "*.smali" -exec sh -c '
-            classname=$(grep "^.class" "$1" | head -1 | awk "{print \$NF}")
-            if [ ! -z "$classname" ]; then
-              echo ".class public $classname" > "$1"
-              echo ".super Ljava/lang/Object;" >> "$1"
-            fi
-          ' _ {} \;
-
-          # Disable ThreatListener
-          cat > yeeps_decoded/smali/com/aheaditec/talsec_security/security/api/ThreatListener.smali << 'EOF'
-          .class public interface abstract Lcom/aheaditec/talsec_security/security/api/ThreatListener;
-          .super Ljava/lang/Object;
-
-          .method public abstract threatDetected(Lcom/aheaditec/talsec_security/security/api/ThreatListener$ThreatDetected;)V
-          .end method
-          EOF
-
-          echo "Talsec patched!"
+          # Delete all talsec smali
+          rm -rf yeeps_decoded/smali/com/aheaditec/
+          
+          # Delete talsec native libs
+          find yeeps_decoded/ -name "*talsec*" -delete
+          find yeeps_decoded/ -name "*Talsec*" -delete
+          
+          # Remove talsec from manifest
+          python3 -c "
+          with open('yeeps_decoded/AndroidManifest.xml', 'r') as f:
+              content = f.read()
+          content = content.replace('com.aheaditec', 'com.disabled')
+          with open('yeeps_decoded/AndroidManifest.xml', 'w') as f:
+              f.write(content)
+          print('Manifest patched')
+          "
+          echo "Talsec removed!"
 
       - name: Inject mod smali
         run: |
