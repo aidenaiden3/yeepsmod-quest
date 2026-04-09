@@ -45,8 +45,6 @@ public class MainActivity extends Activity {
     private String selectedAppLabel = null;
     private TextView selectedGameLabel;
     private boolean shizukuAvailable = false;
-    private boolean adbConnected = false;
-    private String adbBinaryPath = null;
 
     private static final int SHIZUKU_REQUEST_CODE = 1001;
 
@@ -55,7 +53,7 @@ public class MainActivity extends Activity {
             if (requestCode == SHIZUKU_REQUEST_CODE) {
                 shizukuAvailable = grantResult == PackageManager.PERMISSION_GRANTED;
                 show(shizukuAvailable ?
-                    "✓ Shizuku connected!\nNow tap Scan All Apps in the Games tab." :
+                    "✓ Shizuku connected!" :
                     "✗ Shizuku permission denied.");
             }
         };
@@ -179,12 +177,6 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         Shizuku.removeRequestPermissionResultListener(permissionResultListener);
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Refresh status when coming back to app
     }
 
     private void checkShizuku() {
@@ -320,13 +312,8 @@ public class MainActivity extends Activity {
         accStatus.setPadding(20, 15, 20, 15);
         c.addView(accStatus);
 
-        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            } catch (Exception e) {
-                show("Error: " + e.getMessage());
-            }
-        });
+        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v ->
+            runAndShow("am start -a android.settings.ACCESSIBILITY_SETTINGS"));
 
         addBtn(c, "📖 Read Screen Content", BTN, Color.WHITE, v -> {
             String content = ModAccessibilityService.getScreenContent();
@@ -367,7 +354,7 @@ public class MainActivity extends Activity {
             show("Swiped down");
         });
 
-        addSubLabel(c, "System Mods (needs Shizuku/ADB)");
+        addSubLabel(c, "System Mods");
 
         String[] mods = {
             "God Mode", "Fly", "No Clip", "Speed Boost",
@@ -403,10 +390,8 @@ public class MainActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)); }
             catch (Exception e) { show("Error: " + e.getMessage()); }
         });
-        addBtn(c, "Accessibility Settings", BTN, Color.WHITE, v -> {
-            try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
-            catch (Exception e) { show("Error: " + e.getMessage()); }
-        });
+        addBtn(c, "Accessibility Settings", BTN, Color.WHITE, v ->
+            runAndShow("am start -a android.settings.ACCESSIBILITY_SETTINGS"));
         addBtn(c, "Selected App Settings", BTN, Color.WHITE, v -> {
             if (selectedPackage == null) { show("Select an app first!"); return; }
             try {
@@ -538,16 +523,11 @@ public class MainActivity extends Activity {
         addSectionLabel(c, "Settings");
 
         addSubLabel(c, "Accessibility Service");
-        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            } catch (Exception e) {
-                show("Error: " + e.getMessage());
-            }
-        });
+        addBtn(c, "⚡ Enable Mod Service", ACCENT, Color.BLACK, v ->
+            runAndShow("am start -a android.settings.ACCESSIBILITY_SETTINGS"));
         addBtn(c, "Service Status", BTN, Color.WHITE, v ->
             show(ModAccessibilityService.instance != null ?
-                "✓ Mod service is running!\nReady to interact with games." :
+                "✓ Mod service is running!" :
                 "✗ Mod service not running.\nGo to Accessibility Settings and enable emder.lol"));
 
         addSubLabel(c, "Shizuku");
@@ -556,7 +536,7 @@ public class MainActivity extends Activity {
             checkShizuku();
             show(shizukuAvailable ?
                 "✓ Shizuku connected!" :
-                "✗ Shizuku not connected.\nOpen Shizuku app and start the service.");
+                "✗ Shizuku not connected.");
         });
 
         addSubLabel(c, "Theme");
